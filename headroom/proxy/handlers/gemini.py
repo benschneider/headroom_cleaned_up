@@ -207,10 +207,44 @@ class GeminiHandlerMixin:
         # Memory: Get user ID when memory is enabled. Reads `request.headers`
         # directly because `headers` was stripped of `x-headroom-*` (PR-A5).
         memory_user_id: str | None = None
+        memory_request_ctx = None
         if self.memory_handler:
             memory_user_id = request.headers.get(
                 "x-headroom-user-id",
                 os.environ.get("USER", os.environ.get("USERNAME", "default")),
+            )
+            # Per-project memory routing (GH #462). Gemini's
+            # ``systemInstruction`` field carries the system prompt;
+            # ``extract_system_prompt`` doesn't know that shape, so we
+            # pull it directly when present and fall back to the
+            # request body for OpenAI/Anthropic-shaped payloads.
+            from headroom.memory.storage_router import (
+                RequestContext as _MemRequestContext,
+            )
+            from headroom.memory.storage_router import (
+                extract_system_prompt as _extract_sys_prompt,
+            )
+
+            gemini_sys = body.get("systemInstruction") or body.get("system_instruction") or {}
+            sys_text = ""
+            if isinstance(gemini_sys, dict):
+                parts = gemini_sys.get("parts") or []
+                if isinstance(parts, list):
+                    for p in parts:
+                        if isinstance(p, dict):
+                            t = p.get("text")
+                            if isinstance(t, str):
+                                sys_text += ("\n" if sys_text else "") + t
+            if not sys_text:
+                sys_text = _extract_sys_prompt(body)
+
+            memory_request_ctx = _MemRequestContext(
+                headers=dict(request.headers),
+                system_prompt=sys_text,
+                base_user_id=memory_user_id,
+                project_root_override=(
+                    getattr(self.memory_handler.config, "project_root_override", "") or None
+                ),
             )
 
         # Rate limiting (use Gemini API key)
@@ -333,7 +367,9 @@ class GeminiHandlerMixin:
             try:
                 if self.memory_handler.config.inject_context:
                     memory_context = await self.memory_handler.search_and_format_context(
-                        memory_user_id, optimized_messages
+                        memory_user_id,
+                        optimized_messages,
+                        request_context=memory_request_ctx,
                     )
                     if memory_context:
                         new_messages, bytes_appended = (

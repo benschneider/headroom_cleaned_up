@@ -1252,10 +1252,28 @@ class OpenAIHandlerMixin:
         # directly because `headers` was stripped of `x-headroom-*` for the
         # upstream-bound copy (PR-A5).
         memory_user_id: str | None = None
+        memory_request_ctx = None
         if self.memory_handler:
             memory_user_id = request.headers.get(
                 "x-headroom-user-id",
                 os.environ.get("USER", os.environ.get("USERNAME", "default")),
+            )
+            # Per-project memory routing (GH #462). Built once per request
+            # so every save/search/inject resolves to the same workspace.
+            from headroom.memory.storage_router import (
+                RequestContext as _MemRequestContext,
+            )
+            from headroom.memory.storage_router import (
+                extract_system_prompt as _extract_sys_prompt,
+            )
+
+            memory_request_ctx = _MemRequestContext(
+                headers=dict(request.headers),
+                system_prompt=_extract_sys_prompt(body),
+                base_user_id=memory_user_id,
+                project_root_override=(
+                    getattr(self.memory_handler.config, "project_root_override", "") or None
+                ),
             )
 
         # Rate limiting
@@ -1584,7 +1602,9 @@ class OpenAIHandlerMixin:
             try:
                 if self.memory_handler.config.inject_context:
                     memory_context = await self.memory_handler.search_and_format_context(
-                        memory_user_id, optimized_messages
+                        memory_user_id,
+                        optimized_messages,
+                        request_context=memory_request_ctx,
                     )
                     if memory_context:
                         from headroom.proxy.helpers import (
@@ -2054,7 +2074,10 @@ class OpenAIHandlerMixin:
                 ):
                     try:
                         tool_results = await self.memory_handler.handle_memory_tool_calls(
-                            resp_json, memory_user_id, "openai"
+                            resp_json,
+                            memory_user_id,
+                            "openai",
+                            request_context=memory_request_ctx,
                         )
                         if tool_results:
                             # Build continuation: original messages + assistant tool_calls + tool results
@@ -2373,10 +2396,26 @@ class OpenAIHandlerMixin:
         # Memory: Get user ID when memory is enabled. Reads `request.headers`
         # directly because `headers` was stripped of `x-headroom-*` (PR-A5).
         memory_user_id: str | None = None
+        memory_request_ctx = None
         if self.memory_handler:
             memory_user_id = request.headers.get(
                 "x-headroom-user-id",
                 os.environ.get("USER", os.environ.get("USERNAME", "default")),
+            )
+            from headroom.memory.storage_router import (
+                RequestContext as _MemRequestContext,
+            )
+            from headroom.memory.storage_router import (
+                extract_system_prompt as _extract_sys_prompt,
+            )
+
+            memory_request_ctx = _MemRequestContext(
+                headers=dict(request.headers),
+                system_prompt=_extract_sys_prompt(body),
+                base_user_id=memory_user_id,
+                project_root_override=(
+                    getattr(self.memory_handler.config, "project_root_override", "") or None
+                ),
             )
 
         # Rate limiting
@@ -2419,7 +2458,9 @@ class OpenAIHandlerMixin:
                     try:
                         memory_context = await asyncio.wait_for(
                             self.memory_handler.search_and_format_context(
-                                memory_user_id, optimized_messages
+                                memory_user_id,
+                                optimized_messages,
+                                request_context=memory_request_ctx,
                             ),
                             timeout=RESPONSES_CONTEXT_SEARCH_TIMEOUT_SECONDS,
                         )
@@ -2654,6 +2695,7 @@ class OpenAIHandlerMixin:
                     tags,
                     optimization_latency,
                     memory_user_id=memory_user_id,
+                    memory_request_ctx=memory_request_ctx,
                 )
             else:
                 headers = await apply_copilot_api_auth(headers, url=url)
@@ -3388,6 +3430,7 @@ class OpenAIHandlerMixin:
 
             # --- Memory: inject context, tools, and instructions ---
             memory_user_id: str | None = None
+            memory_request_ctx = None
             if self.memory_handler and body and not _ws_bypass:
                 memory_user_id = ws_headers.get(
                     "x-headroom-user-id",
@@ -3396,6 +3439,23 @@ class OpenAIHandlerMixin:
                 try:
                     # Unwrap response.create envelope to access the response body
                     ws_response_body = body.get("response", body)
+
+                    # Per-project memory routing (GH #462). For WS,
+                    # ``ws_response_body`` carries ``instructions`` —
+                    # that's the system-prompt-equivalent we feed to the
+                    # resolver.
+                    from headroom.memory.storage_router import (
+                        RequestContext as _MemRequestContext,
+                    )
+
+                    memory_request_ctx = _MemRequestContext(
+                        headers=dict(ws_headers),
+                        system_prompt=str(ws_response_body.get("instructions") or ""),
+                        base_user_id=memory_user_id,
+                        project_root_override=(
+                            getattr(self.memory_handler.config, "project_root_override", "") or None
+                        ),
+                    )
 
                     # Debug: log what Codex sends so we can see the full tool list
                     existing_tool_names = [
@@ -3428,7 +3488,9 @@ class OpenAIHandlerMixin:
                             async with stage_timer.measure("memory_context"):
                                 memory_context = await asyncio.wait_for(
                                     self.memory_handler.search_and_format_context(
-                                        memory_user_id, ws_msgs
+                                        memory_user_id,
+                                        ws_msgs,
+                                        request_context=memory_request_ctx,
                                     ),
                                     timeout=RESPONSES_CONTEXT_SEARCH_TIMEOUT_SECONDS,
                                 )

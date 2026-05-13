@@ -35,6 +35,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 from headroom.memory import qdrant_env
+from headroom.memory.storage_router import (
+    BackendRouter,
+    BackendRouterConfig,
+    MemoryStorageMode,
+    RequestContext,
+    ResolvedScope,
+)
 
 if TYPE_CHECKING:
     from headroom.memory.backends.local import LocalBackend
@@ -97,6 +104,14 @@ class MemoryConfig:
     inject_context: bool = True
     top_k: int = 10
     min_similarity: float = 0.3
+    # Per-project storage routing (GH #462). When ``storage_mode`` is
+    # PROJECT (default), each resolved workspace lands in its own SQLite
+    # file under ``storage_root``; cross-project bleed becomes
+    # structurally impossible. USER and GLOBAL preserve previous shapes
+    # for users who explicitly opt back in.
+    storage_mode: MemoryStorageMode = MemoryStorageMode.PROJECT
+    storage_root: str = ""  # Defaults to dirname(db_path)/memories
+    project_root_override: str = ""  # CLI ``--memory-project-root``
     # PR-B6: Memory injection mode. AUTO_TAIL (default) auto-appends retrieved
     # memory to the latest user message tail. TOOL disables auto-injection;
     # the model must call ``memory_search`` to retrieve. Configurable per
@@ -143,6 +158,12 @@ class MemoryHandler:
         self.config = config
         self.agent_type = agent_type
         self._backend: LocalBackend | Any = None
+        # Per-project routing for the local backend. Built in
+        # ``_init_backend_locked`` so a single, shared resolver / LRU is
+        # kept on the handler. Qdrant deployments use composite user-id
+        # partitioning instead (see ``_compose_effective_user_id``) — the
+        # router stays None in that case.
+        self._router: BackendRouter | None = None
         self._initialized = False
         # Async singleflight guard for backend init. Ensures concurrent first
         # callers land on one init (double-checked pattern inside
@@ -301,6 +322,37 @@ class MemoryHandler:
             logger.info(
                 f"Memory: Initialized LocalBackend at {self.config.db_path} "
                 f"(embedder: {embedder_backend})"
+            )
+
+            # Per-project routing (GH #462). The router shares the same
+            # backend_config_template so every project DB inherits the
+            # embedder / cache settings selected above. ``self._backend``
+            # remains the GLOBAL-mode fallback / legacy compatibility
+            # backend; callers that pass a ``RequestContext`` route
+            # through ``self._router`` instead.
+            storage_root = (
+                Path(self.config.storage_root)
+                if self.config.storage_root
+                else (Path(self.config.db_path).resolve().parent / "memories")
+            )
+            global_db_path = Path(self.config.db_path).resolve()
+            router_cfg = BackendRouterConfig(
+                mode=self.config.storage_mode,
+                root_dir=storage_root,
+                global_db_path=global_db_path,
+                backend_config_template=backend_config,
+            )
+            self._router = BackendRouter(router_cfg)
+            # Seed the router's LRU with the already-initialized
+            # legacy backend so GLOBAL-mode requests reuse it instead
+            # of opening a second handle to the same file.
+            with self._router._lock:  # type: ignore[attr-defined]
+                self._router._backends[global_db_path] = self._backend  # type: ignore[attr-defined]
+            logger.info(
+                "event=memory_router_initialized mode=%s root=%s global_db=%s",
+                self.config.storage_mode.value,
+                storage_root,
+                global_db_path,
             )
 
         elif self.config.backend == "qdrant-neo4j":
@@ -508,16 +560,82 @@ class MemoryHandler:
         )
         return tools, True
 
+    def _resolve_for_request(
+        self, base_user_id: str, request_context: RequestContext | None
+    ) -> tuple[Any, ResolvedScope | None, str]:
+        """Pick the backend + effective user_id for a single request.
+
+        Returns ``(backend, scope, effective_user_id)``. ``scope`` is
+        ``None`` when the caller did not provide a ``RequestContext``
+        (e.g. legacy tests, qdrant deployments that pre-date the router)
+        — in that case the legacy ``self._backend`` and the bare
+        ``base_user_id`` are returned, matching pre-fix behaviour.
+
+        For the local backend with a ``RequestContext`` the router picks
+        the project DB; the user_id passed into the backend stays the
+        raw user_id (physical isolation is the partition).
+
+        For the qdrant-neo4j backend a composite ``user_id::project_key``
+        is used so projects partition logically inside the single
+        Qdrant collection. The router does not own qdrant connections.
+        """
+
+        if request_context is None or self._router is None:
+            return self._backend, None, base_user_id
+
+        if self.config.backend == "local":
+            backend, scope = self._router.backend_for(request_context)
+            return backend, scope, base_user_id
+
+        # Non-local backends: derive scope but keep one shared backend
+        # and compose the user_id so the partition lives in the user_id
+        # column instead of in a separate file.
+        scope = self._router._resolve_scope(request_context)
+        composed = (
+            base_user_id
+            if scope.project_key is None or scope.mode is MemoryStorageMode.GLOBAL
+            else f"{base_user_id}::{scope.project_key}"
+        )
+        return self._backend, scope, composed
+
+    @staticmethod
+    def _format_memory_block_header(scope: ResolvedScope | None) -> str:
+        """Workspace / scope provenance header for the injected memory block.
+
+        Fix C from GH #462: the previous header (``## Relevant Memories for
+        This User``) had no scope information, so a model receiving cross-
+        project leakage could not reason about whether the memories
+        applied — Claude flagged the block as prompt injection. Including
+        the workspace name and scope mode makes the provenance visible.
+        """
+
+        if scope is None:
+            return "## Relevant Memories for This User"
+        if scope.mode is MemoryStorageMode.PROJECT:
+            return f"## Relevant Memories (workspace: {scope.display_name}, scope: project)"
+        if scope.mode is MemoryStorageMode.USER:
+            return f"## Relevant Memories (user: {scope.display_name}, scope: user)"
+        return "## Relevant Memories (scope: global)"
+
     async def search_and_format_context(
         self,
         user_id: str,
         messages: list[dict[str, Any]],
+        request_context: RequestContext | None = None,
     ) -> str | None:
         """Search memories and format as context injection.
 
         Args:
-            user_id: User identifier for memory scoping.
+            user_id: User identifier for memory scoping (the base user
+                id, derived from ``x-headroom-user-id`` upstream).
             messages: Conversation messages (used to extract query).
+            request_context: Optional request envelope (headers, system
+                prompt, base user id). When provided, memory retrieval
+                is scoped to the resolved workspace / project so memories
+                from unrelated projects can never bleed in (GH #462). When
+                omitted, behaves as before this fix — single-bucket search
+                against the legacy backend. Production handlers always
+                pass it; tests / mocks can keep the simpler call shape.
 
         Returns:
             Formatted context string, or None if no relevant memories.
@@ -546,6 +664,8 @@ class MemoryHandler:
         if not self._backend:
             return None
 
+        backend, scope, effective_user_id = self._resolve_for_request(user_id, request_context)
+
         # Extract query from last user message
         query = self._extract_user_query(messages)
         if not query:
@@ -553,16 +673,20 @@ class MemoryHandler:
             return None
 
         try:
-            # Search memories
-            results = await self._backend.search_memories(
+            # Search memories on the per-request resolved backend.
+            results = await backend.search_memories(
                 query=query,
-                user_id=user_id,
+                user_id=effective_user_id,
                 top_k=self.config.top_k,
                 include_related=True,
             )
 
             if not results:
-                logger.debug(f"Memory: No memories found for user {user_id}")
+                logger.debug(
+                    "Memory: No memories found for user=%s scope=%s",
+                    effective_user_id,
+                    scope.display_name if scope else "<legacy>",
+                )
                 return None
 
             # Filter by minimum similarity
@@ -584,23 +708,27 @@ class MemoryHandler:
                     memory_lines.append(f"   (Related: {entities_str})")
 
         except Exception as e:
-            logger.warning(f"Memory: Search failed for user {user_id}: {e}")
+            logger.warning(f"Memory: Search failed for user {effective_user_id}: {e}")
             return None
 
         if not memory_lines:
             return None
 
-        context = f"""## Relevant Memories for This User
+        header = self._format_memory_block_header(scope)
+        context = f"""{header}
 
-The following information was previously saved about this user:
+The following information was previously saved in this scope:
 
 {chr(10).join(memory_lines)}
 
 Use this context to provide personalized and contextually relevant responses."""
 
         logger.info(
-            f"Memory: Injecting {len(memory_lines)} memories "
-            f"({len(context)} chars) for user {user_id}"
+            "event=memory_inject user=%s scope=%s count=%d chars=%d",
+            effective_user_id,
+            scope.display_name if scope else "<legacy>",
+            len(memory_lines),
+            len(context),
         )
         return context
 
@@ -742,6 +870,7 @@ Use this context to provide personalized and contextually relevant responses."""
         response: dict[str, Any],
         user_id: str,
         provider: str = "anthropic",
+        request_context: RequestContext | None = None,
     ) -> list[dict[str, Any]]:
         """Execute memory tool calls and return results.
 
@@ -749,6 +878,10 @@ Use this context to provide personalized and contextually relevant responses."""
             response: The API response containing tool calls.
             user_id: User identifier for memory operations.
             provider: Provider format ("anthropic" or "openai").
+            request_context: Optional request envelope. When provided,
+                save/search/update/delete operations route to the per-
+                workspace DB so projects cannot read or overwrite each
+                other's memories (GH #462).
 
         Returns:
             List of tool results in provider format.
@@ -781,7 +914,11 @@ Use this context to provide personalized and contextually relevant responses."""
                 if not self._backend:
                     continue
                 result_content = await self._execute_memory_tool(
-                    tool_name, input_data, user_id, provider
+                    tool_name,
+                    input_data,
+                    user_id,
+                    provider,
+                    request_context=request_context,
                 )
             else:
                 continue
@@ -814,17 +951,19 @@ Use this context to provide personalized and contextually relevant responses."""
         input_data: dict[str, Any],
         user_id: str,
         provider: str = "anthropic",
+        *,
+        request_context: RequestContext | None = None,
     ) -> str:
         """Execute a memory tool and return result string."""
         try:
             if tool_name == "memory_save":
-                return await self._execute_save(input_data, user_id, provider)
+                return await self._execute_save(input_data, user_id, provider, request_context)
             elif tool_name == "memory_search":
-                return await self._execute_search(input_data, user_id)
+                return await self._execute_search(input_data, user_id, request_context)
             elif tool_name == "memory_update":
-                return await self._execute_update(input_data, user_id, provider)
+                return await self._execute_update(input_data, user_id, provider, request_context)
             elif tool_name == "memory_delete":
-                return await self._execute_delete(input_data, user_id)
+                return await self._execute_delete(input_data, user_id, request_context)
             else:
                 return json.dumps({"error": f"Unknown tool: {tool_name}"})
 
@@ -833,7 +972,11 @@ Use this context to provide personalized and contextually relevant responses."""
             return json.dumps({"status": "error", "error": str(e)})
 
     async def _execute_save(
-        self, input_data: dict[str, Any], user_id: str, provider: str = "anthropic"
+        self,
+        input_data: dict[str, Any],
+        user_id: str,
+        provider: str = "anthropic",
+        request_context: RequestContext | None = None,
     ) -> str:
         """Execute memory_save tool with provenance, dedup hints, and async background dedup."""
         content = input_data.get("content", "")
@@ -848,18 +991,26 @@ Use this context to provide personalized and contextually relevant responses."""
         relationships = input_data.get("relationships")
         extracted_relationships = input_data.get("extracted_relationships")
 
-        # Agent provenance metadata
-        provenance_metadata = {
+        backend, scope, effective_user_id = self._resolve_for_request(user_id, request_context)
+
+        # Agent provenance metadata. Workspace lineage is recorded on
+        # the memory itself so cross-project leaks (if any ever
+        # reappear) are forensically attributable.
+        provenance_metadata: dict[str, Any] = {
             "source_agent": self.agent_type,
             "source_provider": provider,
             "created_via": "tool_call",
             "created_at_utc": datetime.now(timezone.utc).isoformat(),
         }
+        if scope is not None:
+            provenance_metadata["workspace_display"] = scope.display_name
+            provenance_metadata["workspace_key"] = scope.project_key or ""
+            provenance_metadata["storage_mode"] = scope.mode.value
 
-        # Save to backend
-        memory = await self._backend.save_memory(
+        # Save to the resolved backend.
+        memory = await backend.save_memory(
             content=content,
-            user_id=user_id,
+            user_id=effective_user_id,
             importance=importance,
             facts=facts,
             entities=entities,
@@ -872,9 +1023,9 @@ Use this context to provide personalized and contextually relevant responses."""
         # Search for similar existing memories (for hints + async dedup)
         similar_memories = []
         try:
-            results = await self._backend.search_memories(
+            results = await backend.search_memories(
                 query=content,
-                user_id=user_id,
+                user_id=effective_user_id,
                 top_k=5,
             )
             # Exclude the memory we just saved
@@ -908,12 +1059,17 @@ Use this context to provide personalized and contextually relevant responses."""
 
         # Async background dedup: auto-supersede obvious duplicates
         if similar_memories:
-            asyncio.create_task(self._background_dedup(memory.id, similar_memories, user_id))
+            asyncio.create_task(
+                self._background_dedup(memory.id, similar_memories, effective_user_id, backend)
+            )
 
         logger.info(
-            f"Memory: Saved '{content[:60]}' for user {user_id} "
-            f"(agent={self.agent_type}, provider={provider}, "
-            f"similar={len(similar_memories)})"
+            "event=memory_save user=%s scope=%s agent=%s provider=%s similar=%d",
+            effective_user_id,
+            scope.display_name if scope else "<legacy>",
+            self.agent_type,
+            provider,
+            len(similar_memories),
         )
 
         return json.dumps(result)
@@ -923,13 +1079,22 @@ Use this context to provide personalized and contextually relevant responses."""
         new_memory_id: str,
         similar_results: list[Any],
         user_id: str,
+        backend: Any | None = None,
     ) -> None:
         """Auto-supersede obvious duplicates in background (fire-and-forget).
 
         If an existing memory has >0.92 cosine similarity to the new one,
         mark the older one as superseded. This runs asynchronously and
         never blocks the tool response.
+
+        ``backend`` defaults to the legacy ``self._backend`` so existing
+        non-routed callers keep working; routed callers pass the same
+        per-project backend they wrote to so dedup never crosses
+        workspaces.
         """
+        target = backend if backend is not None else self._backend
+        if target is None:
+            return
         try:
             for result in similar_results:
                 if result.score < self.DEDUP_AUTO_THRESHOLD:
@@ -944,8 +1109,8 @@ Use this context to provide personalized and contextually relevant responses."""
 
                 # Mark old memory as superseded by deleting it
                 # (update_memory creates a new version — for dedup we just remove the duplicate)
-                if hasattr(self._backend, "delete_memory"):
-                    await self._backend.delete_memory(old.id)
+                if hasattr(target, "delete_memory"):
+                    await target.delete_memory(old.id)
                     logger.info(
                         f"Memory dedup: removed '{old.content[:50]}' "
                         f"(superseded by {new_memory_id}, {result.score:.2f} cosine, "
@@ -954,7 +1119,12 @@ Use this context to provide personalized and contextually relevant responses."""
         except Exception as e:
             logger.warning(f"Memory background dedup failed: {e}")
 
-    async def _execute_search(self, input_data: dict[str, Any], user_id: str) -> str:
+    async def _execute_search(
+        self,
+        input_data: dict[str, Any],
+        user_id: str,
+        request_context: RequestContext | None = None,
+    ) -> str:
         """Execute memory_search tool."""
         query = input_data.get("query", "")
         if not query:
@@ -964,9 +1134,11 @@ Use this context to provide personalized and contextually relevant responses."""
         include_related = input_data.get("include_related", True)
         entities_filter = input_data.get("entities")
 
-        results = await self._backend.search_memories(
+        backend, _scope, effective_user_id = self._resolve_for_request(user_id, request_context)
+
+        results = await backend.search_memories(
             query=query,
-            user_id=user_id,
+            user_id=effective_user_id,
             top_k=top_k,
             include_related=include_related,
             entities=entities_filter,
@@ -993,7 +1165,11 @@ Use this context to provide personalized and contextually relevant responses."""
         )
 
     async def _execute_update(
-        self, input_data: dict[str, Any], user_id: str, provider: str = "anthropic"
+        self,
+        input_data: dict[str, Any],
+        user_id: str,
+        provider: str = "anthropic",
+        request_context: RequestContext | None = None,
     ) -> str:
         """Execute memory_update tool with edit history tracking."""
         memory_id = input_data.get("memory_id", "")
@@ -1014,13 +1190,15 @@ Use this context to provide personalized and contextually relevant responses."""
             "reason": reason,
         }
 
+        backend, _scope, effective_user_id = self._resolve_for_request(user_id, request_context)
+
         # Check if backend has update_memory method
-        if hasattr(self._backend, "update_memory"):
+        if hasattr(backend, "update_memory"):
             # Try to get old memory for history
             old_content = ""
             try:
-                old_results = await self._backend.search_memories(
-                    query=memory_id, user_id=user_id, top_k=1
+                old_results = await backend.search_memories(
+                    query=memory_id, user_id=effective_user_id, top_k=1
                 )
                 if old_results:
                     old_content = old_results[0].memory.content[:200]
@@ -1028,11 +1206,11 @@ Use this context to provide personalized and contextually relevant responses."""
             except Exception:
                 pass
 
-            memory = await self._backend.update_memory(
+            memory = await backend.update_memory(
                 memory_id=memory_id,
                 new_content=new_content,
                 reason=f"Updated by {self.agent_type} via {provider}: {reason or 'no reason'}",
-                user_id=user_id,
+                user_id=effective_user_id,
             )
             logger.info(
                 f"Memory: Updated {memory_id} by {self.agent_type} "
@@ -1041,10 +1219,10 @@ Use this context to provide personalized and contextually relevant responses."""
             return json.dumps({"status": "updated", "memory_id": memory.id})
         else:
             # Fallback: delete old, save new
-            await self._backend.delete_memory(memory_id)
-            memory = await self._backend.save_memory(
+            await backend.delete_memory(memory_id)
+            memory = await backend.save_memory(
                 content=new_content,
-                user_id=user_id,
+                user_id=effective_user_id,
                 importance=0.5,
                 metadata={
                     "source_agent": self.agent_type,
@@ -1061,13 +1239,19 @@ Use this context to provide personalized and contextually relevant responses."""
                 }
             )
 
-    async def _execute_delete(self, input_data: dict[str, Any], user_id: str) -> str:
+    async def _execute_delete(
+        self,
+        input_data: dict[str, Any],
+        user_id: str,
+        request_context: RequestContext | None = None,
+    ) -> str:
         """Execute memory_delete tool."""
         memory_id = input_data.get("memory_id", "")
         if not memory_id:
             return json.dumps({"status": "error", "error": "memory_id is required"})
 
-        deleted = await self._backend.delete_memory(memory_id)
+        backend, _scope, _effective = self._resolve_for_request(user_id, request_context)
+        deleted = await backend.delete_memory(memory_id)
 
         return json.dumps(
             {

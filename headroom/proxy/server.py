@@ -592,6 +592,16 @@ class HeadroomProxy(
                     f"expected one of {[m.value for m in MemoryMode]}"
                 ) from exc
 
+            from headroom.memory.storage_router import MemoryStorageMode
+
+            try:
+                _storage_mode = MemoryStorageMode(config.memory_storage_mode)
+            except ValueError as exc:
+                raise ValueError(
+                    f"Invalid memory_storage_mode={config.memory_storage_mode!r}; "
+                    f"expected one of {[m.value for m in MemoryStorageMode]}"
+                ) from exc
+
             memory_config = MemoryConfig(
                 enabled=True,
                 backend=config.memory_backend,
@@ -602,6 +612,8 @@ class HeadroomProxy(
                 top_k=config.memory_top_k,
                 min_similarity=config.memory_min_similarity,
                 mode=_memory_mode,
+                storage_mode=_storage_mode,
+                project_root_override=config.memory_project_root_override,
                 qdrant_url=config.memory_qdrant_url,
                 qdrant_host=config.memory_qdrant_host,
                 qdrant_port=config.memory_qdrant_port,
@@ -619,6 +631,29 @@ class HeadroomProxy(
                 memory_config,
                 agent_type=config.traffic_learning_agent_type,
             )
+
+            # Migration UX (GH #462). When the user is on the new
+            # project-scoped default but a legacy single-file DB exists
+            # with prior memories, surface that clearly so it doesn't
+            # look like an upgrade ate their data.
+            if _storage_mode is MemoryStorageMode.PROJECT:
+                _legacy_path = Path(_mem_db_path)
+                if _legacy_path.exists() and _legacy_path.stat().st_size > 0:
+                    logger.info(
+                        "event=memory_storage_legacy_detected path=%s mode=project "
+                        "hint=pass_--memory-storage=global_to_reach_pre-fix_memories",
+                        _legacy_path,
+                    )
+
+            # The Memory Bridge binds to the single legacy backend at
+            # init time; it doesn't (yet) follow per-project routing.
+            # Warn so users running bridge + project mode aren't
+            # surprised that only the legacy DB syncs with markdown.
+            if config.memory_bridge_enabled and _storage_mode is MemoryStorageMode.PROJECT:
+                logger.warning(
+                    "event=memory_bridge_global_only mode=project "
+                    "hint=bridge_syncs_only_the_legacy_DB_today_per-project_bridge_follow-up_planned"
+                )
 
         # Usage Reporter (license validation + phone-home for managed/enterprise)
         self.usage_reporter: UsageReporter | None = None

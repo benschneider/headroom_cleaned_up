@@ -971,7 +971,9 @@ async def test_search_and_format_context_and_handle_memory_tool_calls(
     async def fake_ensure_initialized() -> None:
         return None
 
-    async def fake_execute_memory_tool(tool_name, input_data, user_id, provider="anthropic"):  # noqa: ANN001
+    async def fake_execute_memory_tool(
+        tool_name, input_data, user_id, provider="anthropic", *, request_context=None
+    ):  # noqa: ANN001
         return f"ran:{tool_name}:{user_id}:{provider}:{input_data}"
 
     async def fake_execute_native(input_data, user_id):  # noqa: ANN001
@@ -1374,7 +1376,9 @@ async def test_extract_tool_calls_and_handle_tool_calls_parse_edges(
     async def fake_ensure_initialized() -> None:
         return None
 
-    async def fake_execute(tool_name, input_data, user_id, provider="anthropic"):  # noqa: ANN001
+    async def fake_execute(
+        tool_name, input_data, user_id, provider="anthropic", *, request_context=None
+    ):  # noqa: ANN001
         return f"ok:{tool_name}:{input_data}"
 
     monkeypatch.setattr(handler, "_ensure_initialized", fake_ensure_initialized)

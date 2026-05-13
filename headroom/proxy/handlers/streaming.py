@@ -783,6 +783,7 @@ class StreamingMixin:
         original_body_bytes: bytes | None = None,
         body_mutated: bool = True,
         mutation_reasons: list[str] | None = None,
+        memory_request_ctx: Any | None = None,
     ) -> Response | StreamingResponse:
         """Stream response with metrics tracking and memory tool handling.
 
@@ -1162,7 +1163,10 @@ class StreamingMixin:
                         # in SSE streaming mode. The WS and non-streaming paths
                         # handle continuation properly.
                         tool_results = await self.memory_handler.handle_memory_tool_calls(
-                            parsed_response, memory_user_id, provider
+                            parsed_response,
+                            memory_user_id,
+                            provider,
+                            request_context=memory_request_ctx,
                         )
                         if tool_results:
                             logger.info(

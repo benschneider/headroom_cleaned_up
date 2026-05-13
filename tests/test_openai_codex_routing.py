@@ -303,7 +303,7 @@ def test_handle_openai_responses_memory_timeout_fails_open(monkeypatch):
         def __init__(self):
             self.config = SimpleNamespace(inject_context=True, inject_tools=False)
 
-        async def search_and_format_context(self, memory_user_id, messages):
+        async def search_and_format_context(self, memory_user_id, messages, **_kwargs):
             return "should not be used"
 
         def has_memory_tool_calls(self, response, provider):

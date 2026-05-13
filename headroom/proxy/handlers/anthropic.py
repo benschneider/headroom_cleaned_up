@@ -657,10 +657,30 @@ class AnthropicHandlerMixin:
             # Reads `request.headers` directly because the local `headers` dict was
             # stripped of `x-headroom-*` above for the upstream-bound copy (PR-A5).
             memory_user_id: str | None = None
+            memory_request_ctx = None
             if self.memory_handler:
                 memory_user_id = request.headers.get(
                     "x-headroom-user-id",
                     os.environ.get("USER", os.environ.get("USERNAME", "default")),
+                )
+                # Per-project memory routing (GH #462). Build the context
+                # once here so save / search / inject all resolve against
+                # the same workspace. Tier order: explicit project-id /
+                # cwd headers → CLI override → system prompt env block.
+                from headroom.memory.storage_router import (
+                    RequestContext as _MemRequestContext,
+                )
+                from headroom.memory.storage_router import (
+                    extract_system_prompt as _extract_sys_prompt,
+                )
+
+                memory_request_ctx = _MemRequestContext(
+                    headers=dict(request.headers),
+                    system_prompt=_extract_sys_prompt(body),
+                    base_user_id=memory_user_id,
+                    project_root_override=(
+                        getattr(self.memory_handler.config, "project_root_override", "") or None
+                    ),
                 )
 
             # Check cache (non-streaming only)
@@ -1256,7 +1276,9 @@ class AnthropicHandlerMixin:
                         async with stage_timer.measure("memory_context"):
                             memory_context = await asyncio.wait_for(
                                 self.memory_handler.search_and_format_context(
-                                    memory_user_id, optimized_messages
+                                    memory_user_id,
+                                    optimized_messages,
+                                    request_context=memory_request_ctx,
                                 ),
                                 timeout=(
                                     self.config.anthropic_pre_upstream_memory_context_timeout_seconds
@@ -1685,6 +1707,7 @@ class AnthropicHandlerMixin:
                         original_body_bytes=original_body_bytes,
                         body_mutated=body_mutation_tracker.mutated,
                         mutation_reasons=body_mutation_tracker.reasons,
+                        memory_request_ctx=memory_request_ctx,
                     )
                 else:
                     async with stage_timer.measure("upstream_connect"):
@@ -1975,7 +1998,10 @@ class AnthropicHandlerMixin:
                         try:
                             # Execute memory tool calls
                             tool_results = await self.memory_handler.handle_memory_tool_calls(
-                                resp_json, memory_user_id, "anthropic"
+                                resp_json,
+                                memory_user_id,
+                                "anthropic",
+                                request_context=memory_request_ctx,
                             )
 
                             if tool_results:

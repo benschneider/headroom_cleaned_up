@@ -550,7 +550,7 @@ def test_memory_context_timeout_fails_open_and_releases_semaphore():
             self.initialized = False
             self.backend = None
 
-        async def search_and_format_context(self, _user_id, _messages):
+        async def search_and_format_context(self, _user_id, _messages, **_kwargs):
             await asyncio.sleep(5.0)
             return "should-timeout"
 
@@ -563,7 +563,7 @@ def test_memory_context_timeout_fails_open_and_releases_semaphore():
         def has_memory_tool_calls(self, _response, _provider) -> bool:
             return False
 
-        async def handle_memory_tool_calls(self, _response, _user_id, _provider):
+        async def handle_memory_tool_calls(self, _response, _user_id, _provider, **_kwargs):
             return []
 
     async def _run() -> None:

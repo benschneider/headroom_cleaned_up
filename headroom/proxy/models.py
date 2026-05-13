@@ -205,6 +205,13 @@ class ProxyConfig:
     memory_enabled: bool = False
     memory_backend: Literal["local", "qdrant-neo4j"] = "local"
     memory_db_path: str = ""  # Empty = auto: {cwd}/.headroom/memory.db
+    # Per-project memory routing (GH #462). ``project`` (the new default)
+    # gives each resolved workspace its own SQLite DB so cross-project
+    # bleed becomes structurally impossible. ``user`` partitions by
+    # x-headroom-user-id only. ``global`` keeps the pre-fix single-DB
+    # behaviour (existing memories remain reachable here).
+    memory_storage_mode: Literal["project", "user", "global"] = "project"
+    memory_project_root_override: str = ""
     memory_inject_tools: bool = True
     traffic_learning_enabled: bool = False
     traffic_learning_agent_type: str = "unknown"  # Which agent is being wrapped

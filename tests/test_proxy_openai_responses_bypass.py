@@ -20,7 +20,12 @@ class _MemoryHandler:
         self.tool_calls = 0
         self.config = SimpleNamespace(inject_context=True, inject_tools=True)
 
-    async def search_and_format_context(self, user_id: str, messages: list[dict[str, Any]]) -> str:
+    async def search_and_format_context(
+        self,
+        user_id: str,
+        messages: list[dict[str, Any]],
+        **_kwargs: Any,
+    ) -> str:
         self.search_calls += 1
         return "memory context that must not be injected"
 

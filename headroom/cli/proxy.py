@@ -2,7 +2,7 @@
 
 import os
 import sys
-from typing import Any
+from typing import Any, Literal, cast
 
 import click
 
@@ -267,13 +267,44 @@ def _selected_context_tool() -> str:
 @click.option(
     "--memory",
     is_flag=True,
-    help="Enable persistent user memory. Auto-detects provider and uses appropriate tool format. "
-    "Set x-headroom-user-id header for per-user memory (defaults to 'default').",
+    help=(
+        "Enable persistent memory. Auto-detects provider and uses appropriate tool format. "
+        "By default (--memory-storage=project) each workspace gets its own DB so memories "
+        "from unrelated projects can never bleed in (GH #462). Override scoping with "
+        "x-headroom-user-id and/or x-headroom-project-id / x-headroom-cwd request headers."
+    ),
 )
 @click.option(
     "--memory-db-path",
     default="",
-    help="Path to memory database file (default: {cwd}/.headroom/memory.db)",
+    help=(
+        "Path to the legacy single-file memory DB (used in --memory-storage=global, "
+        "and as the seed for the project-mode storage root). "
+        "Default: {cwd}/.headroom/memory.db"
+    ),
+)
+@click.option(
+    "--memory-storage",
+    type=click.Choice(["project", "user", "global"], case_sensitive=False),
+    default="project",
+    show_default=True,
+    help=(
+        "Memory partitioning strategy. project (default): one SQLite DB per resolved "
+        "workspace under <db_path_dir>/memories/projects/<basename>-<hash>/memory.db — "
+        "no cross-project bleed. user: one DB per x-headroom-user-id. global: a single "
+        "shared DB (pre-fix behaviour; --memory-db-path file is reused so existing "
+        "memories remain reachable)."
+    ),
+)
+@click.option(
+    "--memory-project-root",
+    default="",
+    help=(
+        "Override the project root used for --memory-storage=project. Useful when the "
+        "client doesn't put a cwd in the system prompt or you want to force a specific "
+        "workspace. Takes effect after the x-headroom-project-id and x-headroom-cwd "
+        "headers."
+    ),
 )
 @click.option("--no-memory-tools", is_flag=True, help="Disable automatic memory tool injection")
 @click.option(
@@ -433,6 +464,8 @@ def proxy(
     no_read_lifecycle: bool,
     memory: bool,
     memory_db_path: str,
+    memory_storage: str,
+    memory_project_root: str,
     no_memory_tools: bool,
     no_memory_context: bool,
     memory_top_k: int,
@@ -610,6 +643,8 @@ def proxy(
         # Stateless mode disables memory (requires SQLite on disk)
         memory_enabled=False if is_stateless else (memory or (learn and not no_learn)),
         memory_db_path=memory_db_path,
+        memory_storage_mode=cast(Literal["project", "user", "global"], memory_storage.lower()),
+        memory_project_root_override=memory_project_root,
         memory_inject_tools=not no_memory_tools,
         memory_inject_context=not no_memory_context,
         memory_top_k=memory_top_k,
@@ -696,10 +731,10 @@ Memory (Multi-Provider):
   - Anthropic: Uses native memory tool (memory_20250818) - subscription safe
   - OpenAI/Gemini/Others: Uses function calling format
   - All providers share the same semantic vector store backend
-  - Set x-headroom-user-id header for per-user memory (defaults to 'default')
+  - Storage mode: {config.memory_storage_mode} (per-project DB by default — set x-headroom-project-id / x-headroom-cwd to override)
   - Tools: {"ENABLED" if config.memory_inject_tools else "DISABLED"}
   - Context injection: {"ENABLED" if config.memory_inject_context else "DISABLED"}
-  - Database: {config.memory_db_path}
+  - Database: {config.memory_db_path} (legacy / global-mode DB)
 """
 
     # Stateless mode warning

@@ -500,11 +500,19 @@ class ContextTracker:
     def format_expansions_for_context(
         self,
         expansions: list[dict[str, Any]],
+        *,
+        workspace_label: str | None = None,
     ) -> str:
         """Format expansions as additional context for the LLM.
 
         Args:
             expansions: Results from execute_expansions.
+            workspace_label: Optional workspace name (e.g. project
+                basename) printed in the block header. Symmetry with the
+                memory injection block — both surfaces declare their
+                provenance so the model can reason about applicability
+                instead of treating the block as prompt injection.
+                See GH #462 (Fix C).
 
         Returns:
             Formatted string to add to context.
@@ -512,7 +520,11 @@ class ContextTracker:
         if not expansions:
             return ""
 
-        parts = ["[Proactive Context Expansion - relevant to your query]"]
+        header = "[Proactive Context Expansion - relevant to your query"
+        if workspace_label:
+            header += f" | workspace: {workspace_label}"
+        header += "]"
+        parts = [header]
 
         for exp in expansions:
             if exp["type"] == "full":
