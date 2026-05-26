@@ -24,6 +24,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
@@ -908,6 +909,141 @@ def _emit_wrap_interrupted(agent: str, marker_path: Path | None) -> None:
             f"\n  Wrap was interrupted before any on-disk changes. Rerun "
             f"`headroom wrap {agent}` to retry — it's idempotent."
         )
+
+
+_WRAP_BANNER_INNER_WIDTH = 47
+
+
+def _print_wrap_banner(agent: str) -> None:
+    """Print a centered ``HEADROOM WRAP: <AGENT>`` banner.
+
+    Every Pattern-B wrap subcommand (proxy-only + watcher loop) used to
+    inline this 3-line box by hand with hand-padded spaces, which made
+    title-length changes silently miscenter the title. Compute padding
+    here so adding a 9th agent just works.
+    """
+    title = f"HEADROOM WRAP: {agent.upper()}"
+    pad_total = _WRAP_BANNER_INNER_WIDTH - len(title)
+    pad_left = pad_total // 2
+    pad_right = pad_total - pad_left
+    click.echo()
+    click.echo("  ╔" + "═" * _WRAP_BANNER_INNER_WIDTH + "╗")
+    click.echo(f"  ║{' ' * pad_left}{title}{' ' * pad_right}║")
+    click.echo("  ╚" + "═" * _WRAP_BANNER_INNER_WIDTH + "╝")
+    click.echo()
+
+
+def _setup_context_tool_for_agent(
+    *,
+    agent: str,
+    agent_display: str,
+    marker_path: Path | None,
+    on_rtk_ready: Callable[[Path], object] | None = None,
+    rtk_required: bool = False,
+    verbose: bool = False,
+) -> Path | None:
+    """Run the rtk-or-lean-ctx context-tool setup with KeyboardInterrupt handling.
+
+    Replaces the ``try / except KeyboardInterrupt / rtk-vs-lean-ctx fork``
+    each wrap subcommand was inlining. Returns the rtk binary path if rtk
+    mode was selected and the install succeeded; otherwise ``None``.
+
+    Args:
+        agent: Internal agent name (used by ``_setup_lean_ctx_agent`` and
+            the interrupt message).
+        agent_display: User-facing capitalized name for the echo lines
+            (e.g. ``"Cline"``, ``"OpenHands"``).
+        marker_path: Optional path to report on Ctrl+C interruption. Pass
+            ``None`` for env-only agents that never touch disk (openhands).
+        on_rtk_ready: Optional callback invoked with the rtk binary path
+            when rtk install succeeds. Use to inject into a marker file
+            (e.g. ``.clinerules``, ``.goosehints``, ``config.json``).
+        rtk_required: If ``True`` and rtk install fails, raise
+            ``SystemExit(1)`` instead of silently falling through. Use this
+            for env-var-only agents (openhands) where there is no
+            fallback marker file to write to.
+        verbose: Forwarded to the rtk/lean-ctx installers.
+    """
+    try:
+        if _selected_context_tool() == _CONTEXT_TOOL_LEAN_CTX:
+            click.echo(f"  Setting up lean-ctx for {agent_display}...")
+            _setup_lean_ctx_agent(agent, verbose=verbose)
+            return None
+        click.echo(f"  Setting up rtk for {agent_display}...")
+        rtk_path = _ensure_rtk_binary(verbose=verbose)
+        if not rtk_path:
+            if rtk_required:
+                click.echo(
+                    "  Error: rtk install failed; refusing to inject "
+                    f"context-tool guidance for {agent_display} without rtk. "
+                    "Install rtk manually and re-run, or pass --no-context-tool "
+                    "to skip rtk."
+                )
+                raise SystemExit(1)
+            return None
+        if on_rtk_ready is not None:
+            on_rtk_ready(rtk_path)
+        return rtk_path
+    except KeyboardInterrupt:
+        _emit_wrap_interrupted(
+            agent, marker_path if (marker_path and marker_path.exists()) else None
+        )
+        raise SystemExit(130) from None
+
+
+def _run_proxy_only_watcher(
+    *,
+    agent_label: str,
+    port: int,
+    no_proxy: bool,
+    learn: bool,
+    memory: bool,
+    agent_type: str,
+    print_setup_lines: Callable[[], None],
+) -> None:
+    """Shared scaffolding for proxy-only wrap subcommands (no child binary launch).
+
+    Pattern-B subcommands (cursor / cline / continue) all start the proxy,
+    print agent-specific configuration instructions, then block until
+    Ctrl+C. This helper unifies that lifecycle so the per-agent diff is
+    just the ``print_setup_lines`` callback.
+
+    The Pattern-A subcommands (aider / copilot / codex / goose / openhands)
+    launch a child binary via ``_launch_tool`` instead and never come
+    through here. ``_launch_tool`` owns the proxy lifecycle on that path.
+    """
+    proxy_holder: list[subprocess.Popen | None] = [None]
+    cleanup = _make_cleanup(proxy_holder, port)
+    signal.signal(signal.SIGINT, cleanup)
+    signal.signal(signal.SIGTERM, cleanup)
+
+    try:
+        _print_wrap_banner(agent_label)
+        proxy_holder[0] = _ensure_proxy(
+            port, no_proxy, learn=learn, memory=memory, agent_type=agent_type
+        )
+        click.echo()
+        print_setup_lines()
+        click.echo()
+        click.echo("  Press Ctrl+C to stop the proxy.")
+        click.echo()
+
+        try:
+            while True:
+                time.sleep(1)
+                proc = proxy_holder[0]
+                if proc and proc.poll() is not None:
+                    click.echo("  Proxy process exited unexpectedly.")
+                    raise SystemExit(1)
+        except KeyboardInterrupt:
+            click.echo("\n  Shutting down...")
+    except SystemExit:
+        raise
+    except Exception as e:
+        click.echo(f"  Error: {e}")
+        raise SystemExit(1) from e
+    finally:
+        cleanup()
 
 
 def _inject_rtk_instructions(file_path: Path, verbose: bool = False) -> bool:
@@ -2722,37 +2858,22 @@ def cursor(
         headroom wrap cursor --no-context-tool  # Proxy only, no CLI context tool
         headroom wrap cursor --port 9999    # Custom proxy port
     """
+    cursorrules: Path | None = Path.cwd() / ".cursorrules" if not no_rtk else None
     if not no_rtk:
-        if _selected_context_tool() == _CONTEXT_TOOL_LEAN_CTX:
-            click.echo("  Setting up lean-ctx for Cursor...")
-            _setup_lean_ctx_agent("cursor", verbose=verbose)
-        else:
-            click.echo("  Setting up rtk for Cursor...")
-            rtk_path = _ensure_rtk_binary(verbose=verbose)
-            if rtk_path:
-                cursorrules = Path.cwd() / ".cursorrules"
-                _inject_rtk_instructions(cursorrules, verbose=verbose)
+        _setup_context_tool_for_agent(
+            agent="cursor",
+            agent_display="Cursor",
+            marker_path=cursorrules,
+            on_rtk_ready=lambda _rtk: _inject_rtk_instructions(
+                cast(Path, cursorrules), verbose=verbose
+            ),
+            verbose=verbose,
+        )
 
     if prepare_only:
         return
 
-    proxy_holder: list[subprocess.Popen | None] = [None]
-    cleanup = _make_cleanup(proxy_holder, port)
-    signal.signal(signal.SIGINT, cleanup)
-    signal.signal(signal.SIGTERM, cleanup)
-
-    try:
-        click.echo()
-        click.echo("  ╔═══════════════════════════════════════════════╗")
-        click.echo("  ║            HEADROOM WRAP: CURSOR              ║")
-        click.echo("  ╚═══════════════════════════════════════════════╝")
-        click.echo()
-
-        proxy_holder[0] = _ensure_proxy(
-            port, no_proxy, learn=learn, memory=memory, agent_type="cursor"
-        )
-
-        click.echo()
+    def _print_cursor_setup() -> None:
         for line in _render_cursor_setup_lines(port):
             click.echo(line)
         if not no_rtk:
@@ -2762,28 +2883,16 @@ def cursor(
             else:
                 click.echo("  rtk instructions injected into .cursorrules")
             click.echo("  Cursor will use token-optimized commands automatically.")
-        click.echo()
-        click.echo("  Press Ctrl+C to stop the proxy.")
-        click.echo()
 
-        # Block until Ctrl+C
-        try:
-            while True:
-                time.sleep(1)
-                proc = proxy_holder[0]
-                if proc and proc.poll() is not None:
-                    click.echo("  Proxy process exited unexpectedly.")
-                    raise SystemExit(1)
-        except KeyboardInterrupt:
-            click.echo("\n  Shutting down...")
-
-    except SystemExit:
-        raise
-    except Exception as e:
-        click.echo(f"  Error: {e}")
-        raise SystemExit(1) from e
-    finally:
-        cleanup()
+    _run_proxy_only_watcher(
+        agent_label="cursor",
+        port=port,
+        no_proxy=no_proxy,
+        learn=learn,
+        memory=memory,
+        agent_type="cursor",
+        print_setup_lines=_print_cursor_setup,
+    )
 
 
 # =============================================================================
@@ -2846,44 +2955,23 @@ def cline(
     # its location even if the interrupt fires before _inject_rtk_instructions
     # returns (e.g., during the inner _ensure_rtk_binary download).
     clinerules: Path | None = Path.cwd() / ".clinerules" if not no_rtk else None
-    try:
-        if not no_rtk:
-            if _selected_context_tool() == _CONTEXT_TOOL_LEAN_CTX:
-                click.echo("  Setting up lean-ctx for Cline...")
-                _setup_lean_ctx_agent("cline", verbose=verbose)
-            else:
-                click.echo("  Setting up rtk for Cline...")
-                rtk_path = _ensure_rtk_binary(verbose=verbose)
-                if rtk_path and clinerules is not None:
-                    _inject_rtk_instructions(clinerules, verbose=verbose)
-    except KeyboardInterrupt:
-        _emit_wrap_interrupted(
-            "cline", clinerules if (clinerules and clinerules.exists()) else None
+    if not no_rtk:
+        _setup_context_tool_for_agent(
+            agent="cline",
+            agent_display="Cline",
+            marker_path=clinerules,
+            on_rtk_ready=lambda _rtk: _inject_rtk_instructions(
+                cast(Path, clinerules), verbose=verbose
+            ),
+            verbose=verbose,
         )
-        raise SystemExit(130) from None
 
     if prepare_only:
         return
 
-    proxy_holder: list[subprocess.Popen | None] = [None]
-    cleanup = _make_cleanup(proxy_holder, port)
-    signal.signal(signal.SIGINT, cleanup)
-    signal.signal(signal.SIGTERM, cleanup)
-
-    try:
-        click.echo()
-        click.echo("  ╔═══════════════════════════════════════════════╗")
-        click.echo("  ║             HEADROOM WRAP: CLINE              ║")
-        click.echo("  ╚═══════════════════════════════════════════════╝")
-        click.echo()
-
-        proxy_holder[0] = _ensure_proxy(
-            port, no_proxy, learn=learn, memory=memory, agent_type="cline"
-        )
-
+    def _print_cline_setup() -> None:
         anthropic_base = _claude_proxy_base_url(port)
         openai_base = f"http://127.0.0.1:{port}/v1"
-        click.echo()
         click.echo("  Configure Cline in VS Code:")
         click.echo("    Settings > Cline > API Provider")
         click.echo(f"    Anthropic Base URL: {anthropic_base}")
@@ -2895,27 +2983,16 @@ def cline(
             else:
                 click.echo("  rtk instructions injected into .clinerules")
             click.echo("  Cline will use token-optimized commands automatically.")
-        click.echo()
-        click.echo("  Press Ctrl+C to stop the proxy.")
-        click.echo()
 
-        try:
-            while True:
-                time.sleep(1)
-                proc = proxy_holder[0]
-                if proc and proc.poll() is not None:
-                    click.echo("  Proxy process exited unexpectedly.")
-                    raise SystemExit(1)
-        except KeyboardInterrupt:
-            click.echo("\n  Shutting down...")
-
-    except SystemExit:
-        raise
-    except Exception as e:
-        click.echo(f"  Error: {e}")
-        raise SystemExit(1) from e
-    finally:
-        cleanup()
+    _run_proxy_only_watcher(
+        agent_label="cline",
+        port=port,
+        no_proxy=no_proxy,
+        learn=learn,
+        memory=memory,
+        agent_type="cline",
+        print_setup_lines=_print_cline_setup,
+    )
 
 
 # =============================================================================
@@ -3000,42 +3077,23 @@ def continue_dev(
     """
     config_file = config_path or (Path.cwd() / ".continue" / "config.json")
 
-    try:
-        if not no_rtk:
-            if _selected_context_tool() == _CONTEXT_TOOL_LEAN_CTX:
-                click.echo("  Setting up lean-ctx for Continue...")
-                _setup_lean_ctx_agent("continue", verbose=verbose)
-            else:
-                click.echo("  Setting up rtk for Continue...")
-                rtk_path = _ensure_rtk_binary(verbose=verbose)
-                if rtk_path:
-                    _inject_continue_rtk_systemmessage(config_file, verbose=verbose)
-    except KeyboardInterrupt:
-        _emit_wrap_interrupted("continue", config_file if config_file.exists() else None)
-        raise SystemExit(130) from None
+    if not no_rtk:
+        _setup_context_tool_for_agent(
+            agent="continue",
+            agent_display="Continue",
+            marker_path=config_file,
+            on_rtk_ready=lambda _rtk: _inject_continue_rtk_systemmessage(
+                config_file, verbose=verbose
+            ),
+            verbose=verbose,
+        )
 
     if prepare_only:
         return
 
-    proxy_holder: list[subprocess.Popen | None] = [None]
-    cleanup = _make_cleanup(proxy_holder, port)
-    signal.signal(signal.SIGINT, cleanup)
-    signal.signal(signal.SIGTERM, cleanup)
-
-    try:
-        click.echo()
-        click.echo("  ╔═══════════════════════════════════════════════╗")
-        click.echo("  ║           HEADROOM WRAP: CONTINUE             ║")
-        click.echo("  ╚═══════════════════════════════════════════════╝")
-        click.echo()
-
-        proxy_holder[0] = _ensure_proxy(
-            port, no_proxy, learn=learn, memory=memory, agent_type="continue"
-        )
-
+    def _print_continue_setup() -> None:
         anthropic_base = _claude_proxy_base_url(port)
         openai_base = f"http://127.0.0.1:{port}/v1"
-        click.echo()
         click.echo("  Configure Continue in your IDE:")
         click.echo(f"    Edit {config_file} and set, per model:")
         click.echo(f'      "apiBase": "{openai_base}"          # OpenAI-compatible models')
@@ -3047,27 +3105,16 @@ def continue_dev(
             else:
                 click.echo(f"  rtk instructions injected into {config_file.name} systemMessage")
             click.echo("  Continue will use token-optimized commands automatically.")
-        click.echo()
-        click.echo("  Press Ctrl+C to stop the proxy.")
-        click.echo()
 
-        try:
-            while True:
-                time.sleep(1)
-                proc = proxy_holder[0]
-                if proc and proc.poll() is not None:
-                    click.echo("  Proxy process exited unexpectedly.")
-                    raise SystemExit(1)
-        except KeyboardInterrupt:
-            click.echo("\n  Shutting down...")
-
-    except SystemExit:
-        raise
-    except Exception as e:
-        click.echo(f"  Error: {e}")
-        raise SystemExit(1) from e
-    finally:
-        cleanup()
+    _run_proxy_only_watcher(
+        agent_label="continue",
+        port=port,
+        no_proxy=no_proxy,
+        learn=learn,
+        memory=memory,
+        agent_type="continue",
+        print_setup_lines=_print_continue_setup,
+    )
 
 
 # =============================================================================
@@ -3138,27 +3185,21 @@ def goose(
         headroom wrap goose -- --provider anthropic  # Pass args to goose
         headroom wrap goose --no-context-tool        # Skip CLI context-tool setup
     """
+    # Goose reads .goosehints from the project root as extra context.
     # Pre-compute the marker path so the KeyboardInterrupt handler can report
     # its location even if the interrupt fires before _inject_rtk_instructions
     # returns (e.g., during the inner _ensure_rtk_binary download).
     goosehints: Path | None = Path.cwd() / ".goosehints" if not no_rtk else None
-    try:
-        if not no_rtk:
-            if _selected_context_tool() == _CONTEXT_TOOL_LEAN_CTX:
-                click.echo("  Setting up lean-ctx for Goose...")
-                _setup_lean_ctx_agent("goose", verbose=verbose)
-            else:
-                click.echo("  Setting up rtk for Goose...")
-                rtk_path = _ensure_rtk_binary(verbose=verbose)
-                if rtk_path and goosehints is not None:
-                    # Goose reads .goosehints from the project root as extra
-                    # context.
-                    _inject_rtk_instructions(goosehints, verbose=verbose)
-    except KeyboardInterrupt:
-        _emit_wrap_interrupted(
-            "goose", goosehints if (goosehints and goosehints.exists()) else None
+    if not no_rtk:
+        _setup_context_tool_for_agent(
+            agent="goose",
+            agent_display="Goose",
+            marker_path=goosehints,
+            on_rtk_ready=lambda _rtk: _inject_rtk_instructions(
+                cast(Path, goosehints), verbose=verbose
+            ),
+            verbose=verbose,
         )
-        raise SystemExit(130) from None
 
     if prepare_only:
         return
@@ -3266,27 +3307,19 @@ def openhands(
         headroom wrap openhands -- --task ...  # Pass args to openhands
         headroom wrap openhands --no-context-tool
     """
+    # openhands never writes to disk — its rtk guidance ships via the
+    # OPENHANDS_INSTRUCTIONS env var below — so marker_path is None and
+    # rtk_required gates the env-only path: without an rtk binary there
+    # is no fallback marker file to fall through to.
     rtk_path: Path | None = None
-    try:
-        if not no_rtk:
-            if _selected_context_tool() == _CONTEXT_TOOL_LEAN_CTX:
-                click.echo("  Setting up lean-ctx for OpenHands...")
-                _setup_lean_ctx_agent("openhands", verbose=verbose)
-            else:
-                click.echo("  Setting up rtk for OpenHands...")
-                rtk_path = _ensure_rtk_binary(verbose=verbose)
-                if not rtk_path:
-                    click.echo(
-                        "  Error: rtk install failed; refusing to inject "
-                        "OPENHANDS_INSTRUCTIONS without rtk. Install rtk "
-                        "manually and re-run, or pass --no-context-tool to "
-                        "skip rtk."
-                    )
-                    raise SystemExit(1)
-    except KeyboardInterrupt:
-        # openhands never writes to disk — no marker file to flag.
-        _emit_wrap_interrupted("openhands", None)
-        raise SystemExit(130) from None
+    if not no_rtk:
+        rtk_path = _setup_context_tool_for_agent(
+            agent="openhands",
+            agent_display="OpenHands",
+            marker_path=None,
+            rtk_required=True,
+            verbose=verbose,
+        )
 
     if prepare_only:
         return
