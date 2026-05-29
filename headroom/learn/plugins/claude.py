@@ -333,15 +333,17 @@ def _decode_project_path(escaped_name: str) -> Path | None:
     if len(parts) < 3:
         return None
 
-    if parts[0] == "Users" and len(parts) > 2:
+    if parts[0] in ("Users", "home") and len(parts) > 2:
+        # Start the greedy decode at the mount root so a home-directory
+        # component containing '.', '-' or '_' (e.g. "first.last", encoded as
+        # "first-last") is matched as a single directory by tokenisation,
+        # instead of being split into "/Users/first/last". Falls back to the
+        # legacy single-token assumption if the rooted walk finds nothing.
+        result = _greedy_path_decode(Path(f"/{parts[0]}"), parts[1:])
+        if result is not None:
+            return result
         base = Path(f"/{parts[0]}/{parts[1]}")
-        remaining = parts[2:]
-        return _greedy_path_decode(base, remaining)
-
-    if parts[0] == "home" and len(parts) > 2:
-        base = Path(f"/{parts[0]}/{parts[1]}")
-        remaining = parts[2:]
-        return _greedy_path_decode(base, remaining)
+        return _greedy_path_decode(base, parts[2:])
 
     return None
 

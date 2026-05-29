@@ -344,3 +344,37 @@ class TestDecodeProjectPath:
         assert len(projects) == 1
         assert projects[0].name == "work"
         assert str(projects[0].project_path).startswith("C:")
+
+    def test_unix_username_with_dot_stays_single_component(
+        self, users_tmp: Path
+    ) -> None:
+        """Unix home dirs like /Users/first.last must not decode as /Users/first/last.
+
+        Claude Code flattens '.', '-' and '_' to '-' when escaping, so
+        /Users/first.last is stored as ``-Users-first-last-…``. The decoder used
+        to consume only the first token after ``Users`` as the home directory and
+        walk from ``/Users/first`` (which does not exist), so it bailed out and
+        callers fell back to the literal ``/Users/first/last`` — causing writes to
+        fail with ``PermissionError: '/Users/first'``. This is the Unix
+        counterpart of ``test_windows_username_with_dot_stays_single_component``.
+
+        Reproduces only when the test runner's home is itself a dotted/hyphenated
+        name under ``/Users`` (the decoder is rooted at the real ``/Users`` tree);
+        skipped otherwise.
+        """
+        import re
+
+        home = Path.home()
+        if not (str(home).startswith("/Users/") and ("." in home.name or "-" in home.name)):
+            pytest.skip("requires a dotted or hyphenated username under /Users")
+
+        project = users_tmp / "proj"
+        project.mkdir(parents=True)
+
+        # Flatten separators exactly as Claude Code does when escaping a path.
+        encoded = "-" + re.sub(r"[-._/]", "-", str(project)[1:])
+        result = _decode_project_path(encoded)
+
+        assert result == project
+        assert f"/{home.name}/" in str(result)
+        assert f"/{home.name.split('.')[0]}/" not in str(result)
