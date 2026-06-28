@@ -359,13 +359,10 @@ function Get-ManifestProxyArgs {
         [string]$Region,
         [string]$Mode,
         [bool]$Memory,
-        [bool]$TelemetryEnabled
     )
 
     $args = New-Object System.Collections.Generic.List[string]
     $args.AddRange([string[]]@('--host','127.0.0.1','--port',"$Port",'--mode',$Mode,'--backend',$Backend))
-    if (-not $TelemetryEnabled) {
-        $args.Add('--no-telemetry')
     }
     if ($Memory) {
         $args.AddRange([string[]]@('--memory','--memory-db-path',"$ContainerHome/.headroom/memory.db"))
@@ -390,7 +387,6 @@ function Write-PersistentState {
         [string]$Region,
         [string]$Mode,
         [bool]$Memory,
-        [bool]$TelemetryEnabled
     )
 
     $root = Get-PersistentProfileRoot -Profile $Profile
@@ -404,7 +400,6 @@ function Write-PersistentState {
         region = $Region
         proxy_mode = $Mode
         memory_enabled = $Memory
-        telemetry_enabled = $TelemetryEnabled
         container_name = Get-PersistentContainerName -Profile $Profile
         health_url = "http://127.0.0.1:$Port/readyz"
     }
@@ -421,7 +416,6 @@ function Write-PersistentManifest {
         [string]$Region,
         [string]$Mode,
         [bool]$Memory,
-        [bool]$TelemetryEnabled,
         [string[]]$ProxyArgs
     )
 
@@ -451,7 +445,6 @@ function Write-PersistentManifest {
         proxy_mode = $Mode
         memory_enabled = $Memory
         memory_db_path = "$ContainerHome/.headroom/memory.db"
-        telemetry_enabled = $TelemetryEnabled
         image = $Image
         service_name = "headroom-$Profile"
         container_name = Get-PersistentContainerName -Profile $Profile
@@ -487,12 +480,10 @@ function Start-PersistentDockerInstall {
         [string]$Region,
         [string]$Mode,
         [bool]$Memory,
-        [bool]$TelemetryEnabled
     )
 
     Assert-ValidProfileName -Profile $Profile
     $containerName = Get-PersistentContainerName -Profile $Profile
-    $proxyArgs = Get-ManifestProxyArgs -Port $Port -Backend $Backend -AnyllmProvider $AnyllmProvider -Region $Region -Mode $Mode -Memory $Memory -TelemetryEnabled $TelemetryEnabled
 
     docker rm -f $containerName | Out-Null 2>$null
 
@@ -524,8 +515,6 @@ function Start-PersistentDockerInstall {
         docker rm -f $containerName | Out-Null 2>$null
         throw
     }
-    Write-PersistentState -Profile $Profile -Image $Image -Port $Port -Backend $Backend -AnyllmProvider $AnyllmProvider -Region $Region -Mode $Mode -Memory $Memory -TelemetryEnabled $TelemetryEnabled
-    Write-PersistentManifest -Profile $Profile -Image $Image -Port $Port -Backend $Backend -AnyllmProvider $AnyllmProvider -Region $Region -Mode $Mode -Memory $Memory -TelemetryEnabled $TelemetryEnabled -ProxyArgs $proxyArgs
 }
 
 function Stop-PersistentDockerInstall {
@@ -615,7 +604,6 @@ function Show-InstallApplyHelp {
         '  --region TEXT                 Cloud region for Bedrock / Vertex style backends.',
         '  --mode TEXT                   Proxy optimization mode.  [default: token]',
         '  --memory                      Enable persistent memory in the runtime.',
-        '  --no-telemetry                Disable anonymous telemetry in the runtime.',
         '  --image TEXT                  Docker image to use.  [default: HEADROOM_DOCKER_IMAGE or ghcr.io/chopratejas/headroom:latest]',
         '  -?, --help                    Show this message and exit.'
     )
@@ -652,7 +640,6 @@ function Parse-InstallApplyArgs {
     $region = $null
     $mode = 'token'
     $memory = $false
-    $telemetryEnabled = $true
     $image = $HeadroomImage
 
     $i = 0
@@ -754,8 +741,6 @@ function Parse-InstallApplyArgs {
                 $i += 1
                 continue
             }
-            '^--no-telemetry$' {
-                $telemetryEnabled = $false
                 $i += 1
                 continue
             }
@@ -788,7 +773,6 @@ function Parse-InstallApplyArgs {
         Region = $region
         Mode = $mode
         Memory = $memory
-        TelemetryEnabled = $telemetryEnabled
         Image = $image
     }
 }
@@ -1564,7 +1548,6 @@ switch ($args[0]) {
         switch ($installCommand) {
             'apply' {
                 $parsed = Parse-InstallApplyArgs -Arguments $installArgs
-                Start-PersistentDockerInstall -Profile $parsed.Profile -Image $parsed.Image -Port $parsed.Port -Backend $parsed.Backend -AnyllmProvider $parsed.AnyllmProvider -Region $parsed.Region -Mode $parsed.Mode -Memory $parsed.Memory -TelemetryEnabled $parsed.TelemetryEnabled
                 Write-Host "Installed docker-native persistent deployment '$($parsed.Profile)' on port $($parsed.Port)."
                 exit 0
             }
@@ -1576,7 +1559,6 @@ switch ($args[0]) {
             'start' {
                 $profile = Parse-InstallProfileArgs -Arguments $installArgs
                 $state = Read-PersistentState -Profile $profile
-                Start-PersistentDockerInstall -Profile $state.profile -Image $state.image -Port $state.port -Backend $state.backend -AnyllmProvider $state.anyllm_provider -Region $state.region -Mode $state.proxy_mode -Memory ([bool]$state.memory_enabled) -TelemetryEnabled ([bool]$state.telemetry_enabled)
                 Write-Host "Started docker-native persistent deployment '$profile'."
                 exit 0
             }
@@ -1589,7 +1571,6 @@ switch ($args[0]) {
             'restart' {
                 $profile = Parse-InstallProfileArgs -Arguments $installArgs
                 $state = Read-PersistentState -Profile $profile
-                Start-PersistentDockerInstall -Profile $state.profile -Image $state.image -Port $state.port -Backend $state.backend -AnyllmProvider $state.anyllm_provider -Region $state.region -Mode $state.proxy_mode -Memory ([bool]$state.memory_enabled) -TelemetryEnabled ([bool]$state.telemetry_enabled)
                 Write-Host "Restarted docker-native persistent deployment '$profile'."
                 exit 0
             }

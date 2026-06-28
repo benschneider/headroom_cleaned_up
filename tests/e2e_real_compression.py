@@ -265,7 +265,6 @@ def main() -> int:
             "proxy",
             "--port",
             str(port),
-            "--no-telemetry",
         ],
         env={**os.environ, "HEADROOM_REQUIRE_RUST_CORE": "true"},
         stdout=log_fp,

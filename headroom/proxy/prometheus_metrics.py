@@ -401,8 +401,6 @@ class PrometheusMetrics:
         validation, or would exceed the cardinality cap.
         """
 
-        from headroom.telemetry.context import MAX_DISTINCT_STACKS, normalize_stack
-
         slug = normalize_stack(stack)
         if not slug:
             return

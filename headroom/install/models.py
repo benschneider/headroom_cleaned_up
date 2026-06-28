@@ -103,7 +103,6 @@ class DeploymentManifest:
     proxy_mode: str = "token"
     memory_enabled: bool = False
     memory_db_path: str = ""
-    telemetry_enabled: bool = True
     image: str = "ghcr.io/chopratejas/headroom:latest"
     service_name: str = "headroom"
     container_name: str = "headroom-persistent"

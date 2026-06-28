@@ -37,7 +37,6 @@ WRAPPER="${HOME}/.local/bin/headroom"
   --profile "${PROFILE}" \
   --port "${PORT}" \
   --image "${IMAGE}" \
-  --no-telemetry
 
 status_output="$("${WRAPPER}" install status --profile "${PROFILE}")"
 printf '%s\n' "${status_output}"
@@ -57,7 +56,6 @@ health = json.loads(sys.argv[4])
 manifest = json.loads((home / ".headroom" / "deploy" / profile / "manifest.json").read_text())
 assert manifest["preset"] == "persistent-docker"
 assert manifest["port"] == port
-assert manifest["telemetry_enabled"] is False
 assert health["deployment"]["profile"] == profile
 assert health["deployment"]["preset"] == "persistent-docker"
 assert health["deployment"]["runtime"] == "docker"

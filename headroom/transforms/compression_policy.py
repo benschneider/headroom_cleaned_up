@@ -261,7 +261,7 @@ def is_enforcement_enabled() -> bool:
     """
     val = os.environ.get(_ENFORCEMENT_ENV, "enabled").strip().lower()
     # Same set of off-values the telemetry beacon honours
-    # (`headroom/telemetry/beacon.py::_OFF_VALUES`) so operators don't
+    # explicit off-values so operators don't
     # have to remember a different vocabulary per flag.
     return val not in ("disabled", "off", "false", "0", "no")
 

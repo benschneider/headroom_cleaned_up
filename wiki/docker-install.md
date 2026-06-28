@@ -105,7 +105,6 @@ headroom install remove
 In Docker-native mode this surface is intentionally scoped to **persistent-docker**:
 
 - supported: `apply`, `status`, `start`, `stop`, `restart`, `remove`
-- supported flags: `--profile`, `--port`, `--backend`, `--anyllm-provider`, `--region`, `--mode`, `--memory`, `--no-telemetry`, `--image`
 - not supported: `persistent-service`, `persistent-task`, or provider/user/system mutation flags such as `--scope`, `--providers`, and `--target`
 
 Those broader lifecycle and config-mutation flows still belong to the Python-native `headroom install ...` command.

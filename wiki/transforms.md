@@ -261,9 +261,7 @@ IntelligentContextManager is a **message-level compressor**. Just like SmartCrus
 4. **Retrievals feed back to TOIN**: If users retrieve dropped messages, TOIN learns to score those patterns higher
 
 ```python
-from headroom.telemetry import get_toin
 
-toin = get_toin()
 manager = IntelligentContextManager(config, toin=toin)
 
 # TOIN provides (for scoring):

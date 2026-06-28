@@ -33,7 +33,7 @@ export async function LiveStats() {
         ))}
       </div>
       <Link
-        href="/docs/community-savings"
+        href="/docs/benchmarks"
         className="text-sm font-medium hover:underline"
       >
         View detailed charts and breakdowns &rarr;

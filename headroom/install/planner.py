@@ -117,7 +117,6 @@ def build_manifest(
     region: str | None,
     proxy_mode: str,
     memory_enabled: bool,
-    telemetry_enabled: bool,
     image: str,
 ) -> DeploymentManifest:
     """Create a normalized deployment manifest."""
@@ -145,7 +144,6 @@ def build_manifest(
         base_env["HEADROOM_REGION"] = region
     # Telemetry is opt-in (off by default). Write the value explicitly so the
     # generated manifest is unambiguous and doesn't depend on the runtime default.
-    base_env["HEADROOM_TELEMETRY"] = "on" if telemetry_enabled else "off"
     if memory_enabled:
         base_env["HEADROOM_MEMORY_ENABLED"] = "1"
 
@@ -159,7 +157,6 @@ def build_manifest(
         "--backend",
         backend,
     ]
-    proxy_args.append("--telemetry" if telemetry_enabled else "--no-telemetry")
     if memory_enabled:
         proxy_args.extend(["--memory", "--memory-db-path", str(_paths.memory_db_path())])
     if anyllm_provider:
@@ -184,7 +181,6 @@ def build_manifest(
         proxy_mode=proxy_mode,
         memory_enabled=memory_enabled,
         memory_db_path=str(_paths.memory_db_path()),
-        telemetry_enabled=telemetry_enabled,
         image=image,
         service_name=f"headroom-{normalized_profile}",
         container_name=container_name,

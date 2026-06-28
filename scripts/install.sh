@@ -327,11 +327,8 @@ build_manifest_proxy_args() {
   local anyllm="$5"
   local region="$6"
   local memory_enabled="$7"
-  local telemetry_enabled="$8"
 
   out_args=(--host 127.0.0.1 --port "${port}" --mode "${proxy_mode}" --backend "${backend}")
-  if [[ "${telemetry_enabled}" -eq 0 ]]; then
-    out_args+=(--no-telemetry)
   fi
   if [[ "${memory_enabled}" -eq 1 ]]; then
     out_args+=(--memory --memory-db-path "${HEADROOM_CONTAINER_HOME}/.headroom/memory.db")
@@ -353,7 +350,6 @@ write_persistent_state() {
   local region="$6"
   local proxy_mode="$7"
   local memory_enabled="$8"
-  local telemetry_enabled="$9"
 
   local root
   root="$(persistent_profile_root "${profile}")"
@@ -368,7 +364,6 @@ write_persistent_state() {
     printf 'REGION=%s\n' "${region}"
     printf 'PROXY_MODE=%s\n' "${proxy_mode}"
     printf 'MEMORY_ENABLED=%s\n' "${memory_enabled}"
-    printf 'TELEMETRY_ENABLED=%s\n' "${telemetry_enabled}"
     printf 'CONTAINER_NAME=%s\n' "$(persistent_container_name "${profile}")"
     printf 'HEALTH_URL=%s\n' "http://127.0.0.1:${port}/readyz"
   } >"$(persistent_state_path "${profile}")"
@@ -383,7 +378,6 @@ write_persistent_manifest() {
   local region="$6"
   local proxy_mode="$7"
   local memory_enabled="$8"
-  local telemetry_enabled="$9"
   local -n proxy_args_ref=${10}
 
   local root
@@ -406,7 +400,6 @@ write_persistent_manifest() {
   if [[ "${memory_enabled}" -eq 1 ]]; then
     memory_json="true"
   fi
-  if [[ "${telemetry_enabled}" -eq 0 ]]; then
     telemetry_json="false"
   fi
 
@@ -427,7 +420,6 @@ write_persistent_manifest() {
   "proxy_mode": "$(json_escape "${proxy_mode}")",
   "memory_enabled": ${memory_json},
   "memory_db_path": "$(json_escape "${HEADROOM_CONTAINER_HOME}/.headroom/memory.db")",
-  "telemetry_enabled": ${telemetry_json},
   "image": "$(json_escape "${image}")",
   "service_name": "headroom-$(json_escape "${profile}")",
   "container_name": "$(json_escape "$(persistent_container_name "${profile}")")",
@@ -460,12 +452,10 @@ load_persistent_state() {
   REGION=""
   PROXY_MODE=""
   MEMORY_ENABLED=""
-  TELEMETRY_ENABLED=""
   CONTAINER_NAME=""
   HEALTH_URL=""
   while IFS='=' read -r key value; do
     case "${key}" in
-      PROFILE|IMAGE|PORT|BACKEND|ANYLLM_PROVIDER|REGION|PROXY_MODE|MEMORY_ENABLED|TELEMETRY_ENABLED|CONTAINER_NAME|HEALTH_URL)
         printf -v "${key}" '%s' "${value}"
         ;;
     esac
@@ -481,7 +471,6 @@ start_persistent_docker_install() {
   local region="$6"
   local proxy_mode="$7"
   local memory_enabled="$8"
-  local telemetry_enabled="$9"
 
   local container_name
   local proxy_args=()
@@ -489,7 +478,6 @@ start_persistent_docker_install() {
 
   validate_profile_name "${profile}"
   container_name="$(persistent_container_name "${profile}")"
-  build_manifest_proxy_args proxy_args "${port}" "${proxy_mode}" "${backend}" "${anyllm}" "${region}" "${memory_enabled}" "${telemetry_enabled}"
 
   docker rm -f "${container_name}" >/dev/null 2>&1 || true
 
@@ -510,8 +498,6 @@ start_persistent_docker_install() {
     die "Headroom persistent Docker deployment failed to start on port ${port}"
   fi
 
-  write_persistent_state "${profile}" "${image}" "${port}" "${backend}" "${anyllm}" "${region}" "${proxy_mode}" "${memory_enabled}" "${telemetry_enabled}"
-  write_persistent_manifest "${profile}" "${image}" "${port}" "${backend}" "${anyllm}" "${region}" "${proxy_mode}" "${memory_enabled}" "${telemetry_enabled}" proxy_args
 }
 
 stop_persistent_docker_install() {
@@ -601,7 +587,6 @@ Options:
   --region TEXT                 Cloud region for Bedrock / Vertex style backends.
   --mode TEXT                   Proxy optimization mode.  [default: token]
   --memory                      Enable persistent memory in the runtime.
-  --no-telemetry                Disable anonymous telemetry in the runtime.
   --image TEXT                  Docker image to use.  [default: HEADROOM_DOCKER_IMAGE or ghcr.io/chopratejas/headroom:latest]
   -?, --help                    Show this message and exit.
 EOF
@@ -732,7 +717,6 @@ parse_install_apply_args() {
         out_memory=1
         shift
         ;;
-      --no-telemetry)
         out_telemetry=0
         shift
         ;;
@@ -1429,9 +1413,6 @@ main() {
       shift 2
       case "${install_command}" in
         apply)
-          local profile port backend anyllm region proxy_mode memory_enabled telemetry_enabled image
-          parse_install_apply_args profile port backend anyllm region proxy_mode memory_enabled telemetry_enabled image "$@"
-          start_persistent_docker_install "${profile}" "${image}" "${port}" "${backend}" "${anyllm}" "${region}" "${proxy_mode}" "${memory_enabled}" "${telemetry_enabled}"
           printf "Installed docker-native persistent deployment '%s' on port %s.\n" "${profile}" "${port}"
           ;;
         status)
@@ -1443,7 +1424,6 @@ main() {
           local profile
           parse_install_profile_arg profile "$@"
           load_persistent_state "${profile}"
-          start_persistent_docker_install "${PROFILE}" "${IMAGE}" "${PORT}" "${BACKEND}" "${ANYLLM_PROVIDER}" "${REGION}" "${PROXY_MODE}" "${MEMORY_ENABLED}" "${TELEMETRY_ENABLED}"
           printf "Started docker-native persistent deployment '%s'.\n" "${profile}"
           ;;
         stop)
@@ -1456,7 +1436,6 @@ main() {
           local profile
           parse_install_profile_arg profile "$@"
           load_persistent_state "${profile}"
-          start_persistent_docker_install "${PROFILE}" "${IMAGE}" "${PORT}" "${BACKEND}" "${ANYLLM_PROVIDER}" "${REGION}" "${PROXY_MODE}" "${MEMORY_ENABLED}" "${TELEMETRY_ENABLED}"
           printf "Restarted docker-native persistent deployment '%s'.\n" "${profile}"
           ;;
         remove)

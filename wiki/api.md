@@ -349,10 +349,8 @@ result = window.apply(messages, max_tokens=100000)
 ```python
 from headroom.transforms import IntelligentContextManager
 from headroom.config import IntelligentContextConfig
-from headroom.telemetry import get_toin
 
 # With TOIN integration for learned patterns
-toin = get_toin()
 config = IntelligentContextConfig(
     keep_system=True,
     keep_last_turns=2,

@@ -138,7 +138,6 @@ async def main_async() -> int:
             "proxy",
             "--port",
             str(proxy_port),
-            "--no-telemetry",
             "--openai-api-url",
             upstream_url,
         ],

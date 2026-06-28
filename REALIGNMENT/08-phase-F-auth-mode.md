@@ -168,10 +168,6 @@ Eliminate P5-56. Extend TOIN's aggregation key from `structure_hash` to `(auth_m
 ### Files
 
 **Modify:**
-- `headroom/telemetry/toin.py:103` — `Pattern` adds `auth_mode: str = "unknown"`, `model_family: str = "unknown"`. (Already covered by Phase B PR-B5; this PR ensures the wiring lands.)
-- `headroom/telemetry/toin.py:477, 496, 727, 729, 1248, 1256` — change aggregation key to tuple.
-- `headroom/telemetry/toin.py` — migration helper that walks the legacy `structure_hash`-only store and copies entries under `("unknown", "unknown", structure_hash)` for graceful degrade.
-- `headroom/telemetry/toin.py` — bumping aggregation key invalidates earlier recommendations; re-publish via the deploy CLI.
 - `headroom/subscription/tracker.py:166` — replace `_current_token: str` (raw OAuth bearer storage) with `_current_token_id: str` (a one-way hash + last-4 chars for debugging). Polling code adapts to use the actual `Authorization` header per request rather than the stored copy.
 
 **Tests added:**

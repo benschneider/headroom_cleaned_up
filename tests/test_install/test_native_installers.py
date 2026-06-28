@@ -373,7 +373,6 @@ def test_bash_native_installer_supports_persistent_docker_lifecycle(tmp_path: Pa
                 "--port",
                 str(port),
                 "--memory",
-                "--no-telemetry",
                 "--image",
                 "fake/headroom:test",
             ],
@@ -386,7 +385,6 @@ def test_bash_native_installer_supports_persistent_docker_lifecycle(tmp_path: Pa
         assert manifest["port"] == port
         assert manifest["memory_enabled"] is True
         assert manifest["memory_db_path"] == "/tmp/headroom-home/.headroom/memory.db"
-        assert manifest["telemetry_enabled"] is False
 
         state_path = home / ".headroom" / "deploy" / "smoke" / "docker-native.env"
         state_text = state_path.read_text(encoding="utf-8")
@@ -616,7 +614,6 @@ def test_powershell_native_installer_supports_persistent_docker_lifecycle(tmp_pa
                 "--port",
                 str(port),
                 "--memory",
-                "--no-telemetry",
                 "--image",
                 "fake/headroom:test",
             ],
@@ -635,7 +632,6 @@ def test_powershell_native_installer_supports_persistent_docker_lifecycle(tmp_pa
         assert manifest["port"] == port
         assert manifest["memory_enabled"] is True
         assert manifest["memory_db_path"] == "/tmp/headroom-home/.headroom/memory.db"
-        assert manifest["telemetry_enabled"] is False
         assert state["container_name"] == "headroom-smoke"
 
         docker_calls = _read_fake_docker_log(env)

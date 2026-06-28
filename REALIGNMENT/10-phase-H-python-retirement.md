@@ -195,7 +195,6 @@ None.
 | `headroom/providers/codex/install.py`, `claude/install.py` | Client config installation | Off-path; filesystem. |
 | `headroom/evals/`, `learn/`, `memory/` writers | Research / batch tooling | Off-path; long-running batch. |
 | `headroom/tokenizers/` | Parity backstop | Used only by parity harness if H3 keeps it. |
-| `headroom/telemetry/toin.py` | TOIN learning loop | Off-path; observation-only after Phase B PR-B5. |
 | `headroom/subscription/tracker.py`, `client.py` | Subscription usage poller | Off-path. |
 | `headroom/copilot_auth.py` | Copilot OAuth refresh | Off-path; specific to Copilot integration. |
 

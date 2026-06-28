@@ -263,10 +263,8 @@ config = IntelligentContextConfig(
 When IntelligentContext drops messages, they're stored in CCR for potential retrieval:
 
 ```python
-from headroom.telemetry import get_toin
 
 # Pass TOIN for bidirectional integration
-toin = get_toin()
 manager = IntelligentContextManager(config=config, toin=toin)
 
 # Dropped messages are:

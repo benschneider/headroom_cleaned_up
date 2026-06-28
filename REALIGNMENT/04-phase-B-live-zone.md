@@ -300,10 +300,6 @@ Eliminate P2-27 and P5-56. Strip TOIN's request-time hint API; keep the recordin
 ### Files
 
 **Modify:**
-- `headroom/telemetry/toin.py:853-927` — remove `get_recommendation()` and `CompressionHint`. Replace with a no-op stub that returns `None`; deprecation warning in docstring.
-- `headroom/telemetry/toin.py:103` — `Pattern` adds `auth_mode: str`, `model_family: str` fields.
-- `headroom/telemetry/toin.py:477, 496, 727, 729, 1248, 1256` — change aggregation key from `sig_hash` to `(auth_mode, model_family, sig_hash)` tuple. Update all dict-key uses.
-- `headroom/telemetry/toin.py:1596` — keep `tenant_prefix` for storage but document it's now redundant with the aggregation key.
 - `headroom/transforms/smart_crusher.py:446` — remove the `get_recommendation()` call site. SmartCrusher is now deterministic; TOIN observes outcomes only.
 - New CLI: `headroom/cli/toin_publish.py` — aggregates the on-disk TOIN store and produces `recommendations.toml`. Run as part of the deploy pipeline.
 - New: `crates/headroom-core/src/transforms/recommendations.rs` — loads `recommendations.toml` at startup. Provides API like `recommendations::get(auth_mode, model, structure_hash) -> Option<Recommendation>`. Used to bias which compressor variants to try first (deterministic; no per-request mutation).

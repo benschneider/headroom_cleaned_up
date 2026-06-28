@@ -192,7 +192,6 @@ These bugs collapse Anthropic prompt-cache hit rate toward 0% for any traffic th
 - **Fix:** Once Phase B replaces ICM, CCR-on-live-zone-content writes the marker into the block content as a side-channel. Phase B PR-B7.
 
 ### P2-27. TOIN influences per-request decisions
-- **File:** `headroom/telemetry/toin.py:853-927`
 - **Evidence:** `get_recommendation()` consults pattern stats and returns hints that bias compression decisions; `pattern.observations += 1` mutates state during the call.
 - **Guide:** §7.1, §11.17, §11.18.
 - **Fix:** Strict observation-only. Recommendations published at deploy time, never altered request-time.
@@ -338,7 +337,6 @@ These bugs collapse Anthropic prompt-cache hit rate toward 0% for any traffic th
 - **Phase F → PR-F1 (`classify_auth_mode`), PR-F2 (gates).**
 
 ### P5-56. TOIN aggregates globally by `structure_hash` only
-- **File:** `headroom/telemetry/toin.py:477, 496`
 - **Risk:** Cross-tenant pattern leakage.
 - **Phase F → PR-F3 changes key to `(auth_mode, model_family, structure_hash)`.**
 

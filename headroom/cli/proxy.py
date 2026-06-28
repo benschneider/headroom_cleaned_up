@@ -779,16 +779,6 @@ def dashboard(port: int, no_open: bool) -> None:
     ),
 )
 @click.option(
-    "--telemetry",
-    is_flag=True,
-    help="Opt in to anonymous usage telemetry — off by default (env: HEADROOM_TELEMETRY=on)",
-)
-@click.option(
-    "--no-telemetry",
-    is_flag=True,
-    help="Force anonymous usage telemetry off (already the default; env: HEADROOM_TELEMETRY=off)",
-)
-@click.option(
     "--stateless",
     is_flag=True,
     help="Disable all filesystem writes — run purely in-memory. "
@@ -885,8 +875,6 @@ def proxy(
     bedrock_region: str | None,
     bedrock_profile: str | None,
     bedrock_api_url: str | None,
-    telemetry: bool,
-    no_telemetry: bool,
     stateless: bool,
     embedding_server: bool,
     embedding_server_socket: str | None,
@@ -948,14 +936,6 @@ def proxy(
             fg="yellow",
             err=True,
         )
-    if telemetry and no_telemetry:
-        click.secho(
-            "Warning: both --telemetry and --no-telemetry were specified; --no-telemetry "
-            "takes precedence and telemetry will be disabled.",
-            fg="yellow",
-            err=True,
-        )
-
     # Opt-in: turn on tool_result interceptors (ast-grep Read outline, etc.).
     # Only fetch the bundled CLI tool binaries when the feature is enabled —
     # otherwise we'd pay a network round-trip and risk a readonly-FS failure
@@ -1005,13 +985,6 @@ def proxy(
         "yes",
         "on",
     )
-
-    # Telemetry is opt-in (off by default). --telemetry opts in; --no-telemetry
-    # forces it off. If both are passed, the explicit opt-out wins (fail-closed).
-    if telemetry:
-        os.environ["HEADROOM_TELEMETRY"] = "on"
-    if no_telemetry:
-        os.environ["HEADROOM_TELEMETRY"] = "off"
 
     if codex_wire_debug or codex_wire_debug_dir:
         os.environ["HEADROOM_CODEX_WIRE_DEBUG"] = "1"
@@ -1240,20 +1213,6 @@ Memory (Multi-Provider):
             "  Stateless:    YES (no filesystem writes — memory, logs, TOIN disabled)\n"
         )
 
-    from headroom.telemetry.beacon import is_telemetry_enabled
-
-    # Build telemetry section for the startup banner. Telemetry is opt-in
-    # (off by default); the disabled line surfaces how to opt in.
-    if is_telemetry_enabled():
-        telemetry_line = (
-            "  Telemetry:    ENABLED (anonymous aggregate stats — you opted in)\n"
-            "                Disable: HEADROOM_TELEMETRY=off or headroom proxy --no-telemetry"
-        )
-    else:
-        telemetry_line = (
-            "  Telemetry:    DISABLED (opt in: HEADROOM_TELEMETRY=on or headroom proxy --telemetry)"
-        )
-
     # Discover proxy extensions (third-party packages registered via the
     # `headroom.proxy_extension` entry-point group). Surfaced in the banner
     # so operators can see what's available + what's currently opted-in.
@@ -1334,7 +1293,7 @@ Starting proxy server...
 {code_aware_line}
 {context_tool_line}
 {extensions_line}
-{stateless_line}{telemetry_line}
+{stateless_line}
 {backend_section}{tuning_section}
 
 Routing:

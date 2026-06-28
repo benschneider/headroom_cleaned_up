@@ -158,7 +158,6 @@ async def main_async() -> int:
             "proxy",
             "--port",
             str(proxy_port),
-            "--no-telemetry",
             # Point /v1/responses upstream at our fake server instead
             # of api.openai.com.
             "--openai-api-url",

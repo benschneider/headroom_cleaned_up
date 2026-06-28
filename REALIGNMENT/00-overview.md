@@ -34,7 +34,6 @@ The realignment is structured in 9 phases, 40 PRs, ~13 weeks sequential or ~8 we
 ## Top 5 wrong assumptions
 
 1. **"Compression means choosing what to drop from history."** Implemented as ICM + DropByScoreStrategy + MessageScorer + relevance + scoring + rolling-window + progressive-summarizer. Fix: retire entirely; compress live-zone content only.
-2. **"TOIN can influence per-request compression decisions."** `headroom/telemetry/toin.py:853-927` mutates pattern state during a call and returns hints that bias the same-input-bytes decision. Fix: strict observation-only; recommendations published between deploys.
 3. **"CCR can mutate the cache hot zone (tools array, system prompt) on demand."** `headroom/ccr/tool_injection.py:302-328` only adds `ccr_retrieve` when content was compressed — tools list flips between requests. `cache_aligner.py:160-262` and `headroom/proxy/server.py:1051` rewrite the system prompt. Fix: register `ccr_retrieve` on every request; route memory injection to the live zone tail; delete the cache_aligner rewrite path.
 4. **"Summarizing past turns is a strategy."** `intelligent_context.py:316-353` SUMMARIZE replaces messages with a single summary at the same position — head modification. Fix: delete; offer compaction only as an explicit customer-initiated action.
 5. **"ToolCrusher operates on every tool message in history without a frozen check."** `headroom/transforms/tool_crusher.py:106` iterates all tool messages. Fix: delete; ContentRouter covers the use case correctly.
