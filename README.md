@@ -449,6 +449,8 @@ Headroom runs **locally**, covers **every** content type, works with every major
 
 > **Attribution.** Headroom ships with the excellent [RTK](https://github.com/rtk-ai/rtk) binary for shell-output rewriting — `git show --short`, scoped `ls`, summarized installers. Huge thanks to the RTK team; their tool is a first-class part of our stack, and Headroom compresses everything downstream of it. Headroom can also use [lean-ctx](https://github.com/yvgude/lean-ctx) as the selected CLI context tool; set `HEADROOM_CONTEXT_TOOL=lean-ctx` before running `headroom wrap ...`.
 
+Headroom wraps managed RTK installs with a small shim so compressed shell-output markers are actionable: run `rtk details <hash>` to print the stored original content for a `Retrieve more: hash=...` marker.
+
 ## Contributing
 
 ```bash

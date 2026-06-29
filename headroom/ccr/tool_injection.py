@@ -160,7 +160,8 @@ the full uncompressed data, you can retrieve it using the `{CCR_TOOL_NAME}` tool
 
 **Available hashes:** {hash_list}
 
-Look for markers like `[N items compressed to M. Retrieve more: hash=abc123]`
+    Look for markers like `[N items compressed to M. Retrieve more: hash=abc123]`.
+    Shell users can recover these with `rtk details <hash>`.
 in tool results to find the hash for each compressed output.
 """
 

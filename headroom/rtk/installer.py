@@ -17,6 +17,7 @@ from urllib.request import urlopen
 from headroom._subprocess import run
 
 from . import RTK_BIN_DIR, RTK_BIN_PATH, RTK_VERSION
+from .shim import install_rtk_detail_shim
 
 logger = logging.getLogger(__name__)
 
@@ -157,6 +158,7 @@ def download_rtk(version: str | None = None) -> Path:
     else:
         logger.info("rtk installed for target %s at %s (verification skipped)", target, target_path)
 
+    install_rtk_detail_shim(target_path)
     return target_path
 
 
@@ -214,6 +216,8 @@ def ensure_rtk(version: str | None = None) -> Path | None:
 
     existing = get_rtk_path()
     if existing:
+        if existing.parent == RTK_BIN_DIR:
+            install_rtk_detail_shim(existing)
         return existing
 
     try:
