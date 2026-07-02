@@ -453,7 +453,7 @@ def dashboard(port: int, no_open: bool) -> None:
     envvar="HEADROOM_ANTHROPIC_PRE_UPSTREAM_ACQUIRE_TIMEOUT_SECONDS",
     help=(
         "Fail-fast timeout for waiting on the Anthropic pre-upstream semaphore "
-        "before returning 503 + Retry-After. "
+        "before failing open to passthrough compression. "
         "Default: 15.0 seconds. "
         "Env: HEADROOM_ANTHROPIC_PRE_UPSTREAM_ACQUIRE_TIMEOUT_SECONDS."
     ),
@@ -468,6 +468,18 @@ def dashboard(port: int, no_open: bool) -> None:
         "still holds a pre-upstream slot. "
         "Default: 2.0 seconds. "
         "Env: HEADROOM_ANTHROPIC_PRE_UPSTREAM_MEMORY_CONTEXT_TIMEOUT_SECONDS."
+    ),
+)
+@click.option(
+    "--compression-max-workers",
+    type=int,
+    default=None,
+    envvar="HEADROOM_COMPRESSION_MAX_WORKERS",
+    help=(
+        "Bound the dedicated compression threadpool (CPU-bound Kompress work). "
+        "Default (unset): min(32, (cpu_count or 1) * 4). Lower it to reduce CPU "
+        "oversubscription under concurrent sessions; a value < 1 is clamped to 1. "
+        "Env: HEADROOM_COMPRESSION_MAX_WORKERS."
     ),
 )
 @click.option(
@@ -874,6 +886,7 @@ def proxy(
     anthropic_pre_upstream_concurrency: int | None,
     anthropic_pre_upstream_acquire_timeout_seconds: float | None,
     anthropic_pre_upstream_memory_context_timeout_seconds: float | None,
+    compression_max_workers: int | None,
     log_file: str | None,
     log_messages: bool,
     codex_wire_debug: bool,
@@ -1131,6 +1144,9 @@ def proxy(
         disable_kompress_fallback=disable_kompress_fallback,
         disable_kompress_anthropic=disable_kompress_anthropic,
         disable_kompress_openai=disable_kompress_openai,
+        # Optional inbound auth token + air-gap switch (env-driven).
+        proxy_token=os.environ.get("HEADROOM_PROXY_TOKEN") or None,
+        offline=_get_env_bool("HEADROOM_OFFLINE", False),
         # Read lifecycle: ON by default (use --no-read-lifecycle to disable)
         read_lifecycle=not no_read_lifecycle,
         # Read maturation (Mechanism B): experimental, OFF by default
@@ -1172,6 +1188,7 @@ def proxy(
         # Precedence: CLI > env > auto-compute (click's ``envvar``
         # handles the env-var fallback).
         anthropic_pre_upstream_concurrency=anthropic_pre_upstream_concurrency,
+        compression_max_workers=compression_max_workers,
         anthropic_pre_upstream_acquire_timeout_seconds=(
             anthropic_pre_upstream_acquire_timeout_seconds
             if anthropic_pre_upstream_acquire_timeout_seconds is not None
@@ -1275,6 +1292,26 @@ Memory (Multi-Provider):
             f"(available: {','.join(_ext_available)})"
         )
 
+    # Security posture line: inbound auth token + air-gap mode, and a loud
+    # flag for the open-bind case (non-loopback host with no token).
+    from headroom.proxy.loopback_guard import is_loopback_host
+
+    _auth_on = bool(config.proxy_token or os.environ.get("HEADROOM_PROXY_TOKEN"))
+    if config.offline:
+        _security_status = "OFFLINE (all egress disabled)" + (
+            " · inbound token REQUIRED (non-loopback)" if _auth_on else ""
+        )
+    elif _auth_on:
+        _security_status = "inbound token REQUIRED for non-loopback callers"
+    elif not is_loopback_host(config.host):
+        _security_status = (
+            "WARNING non-loopback bind with NO token — /v1/* is UNAUTHENTICATED "
+            "(set HEADROOM_PROXY_TOKEN)"
+        )
+    else:
+        _security_status = "loopback-only (no inbound token)"
+    security_line = f"  Security:     {_security_status}"
+
     # Code-aware status line — same logic the inner banner uses, surfaced here
     # so the click-CLI banner is a complete picture (avoids the dual-banner
     # confusion this branch retired).
@@ -1284,31 +1321,16 @@ Memory (Multi-Provider):
     context_tool_line = f"  Context Tool: {_selected_context_tool()}"
 
     # Performance tuning section — only shown when at least one tuning var is active.
-    _stable_turn = _get_env_int_optional("HEADROOM_COMPRESSION_STABLE_AFTER_TURN") or 0
-    _stale_turns = _get_env_int_optional("HEADROOM_STALE_READ_COMPRESS_AFTER_TURNS") or 0
     _embed_socket = os.environ.get("HEADROOM_EMBEDDING_SERVER_SOCKET") or (
         embedding_server and (embedding_server_socket or f"/tmp/headroom-embed-{port}.sock")
     )
     _tuning_lines: list[str] = []
-    if _stable_turn:
-        _tuning_lines.append(
-            f"  Prefix stability:        conservative for first {_stable_turn} turns"
-            f"  (HEADROOM_COMPRESSION_STABLE_AFTER_TURN={_stable_turn})"
-        )
-    if _stale_turns:
-        _tuning_lines.append(
-            f"  Stale read compression:  reads older than {_stale_turns} turns eligible"
-            f"  (HEADROOM_STALE_READ_COMPRESS_AFTER_TURNS={_stale_turns})"
-        )
     if _embed_socket:
         _tuning_lines.append(f"  Embedding sidecar:       {_embed_socket}")
     if _tuning_lines:
         tuning_section = "\nPerformance Tuning:\n" + "\n".join(_tuning_lines)
     else:
-        tuning_section = (
-            "\nPerformance Tuning:  (all defaults — set HEADROOM_COMPRESSION_STABLE_AFTER_TURN"
-            " / HEADROOM_STALE_READ_COMPRESS_AFTER_TURNS to tune)"
-        )
+        tuning_section = ""
 
     click.echo(f"""
 ╔═══════════════════════════════════════════════════════════════════════╗
@@ -1328,6 +1350,7 @@ Starting proxy server...
 {code_aware_line}
 {context_tool_line}
 {extensions_line}
+{security_line}
 {stateless_line}
 {backend_section}{tuning_section}
 
