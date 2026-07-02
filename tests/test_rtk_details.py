@@ -93,3 +93,60 @@ def test_rtk_shim_intercepts_details_and_delegates_other_commands(tmp_path: Path
         capture_output=True,
     )
     assert delegated.stdout == "real:--version\n"
+
+
+def test_rtk_shim_reads_files_exactly(tmp_path: Path) -> None:
+    source = tmp_path / "sample.py"
+    source.write_text("def f():\n    return 1\n", encoding="utf-8")
+    rtk = tmp_path / "rtk"
+    rtk.write_text("#!/bin/sh\necho real:$@\n", encoding="utf-8")
+    rtk.chmod(0o755)
+    install_rtk_detail_shim(rtk)
+
+    result = subprocess.run(
+        [str(rtk), "read", str(source)],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.stdout == "def f():\n    return 1\n"
+
+
+def test_rtk_shim_runs_git_diff_raw(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    fake_git = bin_dir / "git"
+    fake_git.write_text("#!/bin/sh\necho git:$@\n", encoding="utf-8")
+    fake_git.chmod(0o755)
+    import os
+
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+
+    rtk = tmp_path / "rtk"
+    rtk.write_text("#!/bin/sh\necho real:$@\n", encoding="utf-8")
+    rtk.chmod(0o755)
+    install_rtk_detail_shim(rtk)
+
+    diff = subprocess.run(
+        [str(rtk), "git", "diff", "--", "sample.py"],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    show = subprocess.run(
+        [str(rtk), "git", "show", "--stat"],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    status = subprocess.run(
+        [str(rtk), "git", "status"],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+    assert diff.stdout == "git:diff -- sample.py\n"
+    assert show.stdout == "git:show --stat\n"
+    assert status.stdout == "real:git status\n"

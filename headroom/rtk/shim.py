@@ -9,6 +9,8 @@ import stat
 
 SHIM_MARKER = "# headroom-rtk-detail-shim"
 DETAIL_COMMANDS = {"detail", "details", "show", "expand", "retrieve"}
+RAW_COMMANDS = {"cat", "diff", "nl", "sed"}
+RAW_GIT_COMMANDS = {"diff", "show"}
 
 
 def install_rtk_detail_shim(rtk_path: Path) -> Path:
@@ -42,6 +44,8 @@ def _is_headroom_shim(path: Path) -> bool:
 
 def _shim_script(real_name: str) -> str:
     commands = ", ".join(repr(command) for command in sorted(DETAIL_COMMANDS))
+    raw_commands = ", ".join(repr(command) for command in sorted(RAW_COMMANDS))
+    raw_git_commands = ", ".join(repr(command) for command in sorted(RAW_GIT_COMMANDS))
     return f"""#!/usr/bin/env python3
 {SHIM_MARKER}
 from __future__ import annotations
@@ -49,11 +53,13 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import shutil
 import sqlite3
-import subprocess
 import sys
 
 DETAIL_COMMANDS = {{{commands}}}
+RAW_COMMANDS = {{{raw_commands}}}
+RAW_GIT_COMMANDS = {{{raw_git_commands}}}
 
 
 def default_db() -> Path:
@@ -90,6 +96,30 @@ def lookup_detail(hash_key: str) -> str:
     return original
 
 
+def print_files(paths: list[str]) -> int:
+    if not paths:
+        print("usage: rtk read <file> [file...]", file=sys.stderr)
+        return 2
+    for index, path in enumerate(paths):
+        if path == "-":
+            content = sys.stdin.read()
+        else:
+            content = Path(path).read_text(encoding="utf-8", errors="replace")
+        if index:
+            print()
+        print(content, end="" if content.endswith("\\n") else "\\n")
+    return 0
+
+
+def exec_raw(command: str, args: list[str]) -> int:
+    binary = shutil.which(command)
+    if binary is None:
+        print(f"rtk: raw command not found: {{command}}", file=sys.stderr)
+        return 127
+    os.execv(binary, [binary, *args])
+    return 127
+
+
 def main() -> int:
     args = sys.argv[1:]
     if args and args[0] in DETAIL_COMMANDS:
@@ -102,6 +132,21 @@ def main() -> int:
             print(f"rtk details: {{exc}}", file=sys.stderr)
             return 1
         return 0
+
+    if args and args[0] == "--raw":
+        if len(args) < 2:
+            print("usage: rtk --raw <command> [args...]", file=sys.stderr)
+            return 2
+        return exec_raw(args[1], args[2:])
+
+    if args and args[0] == "read":
+        return print_files(args[1:])
+
+    if args and args[0] in RAW_COMMANDS:
+        return exec_raw(args[0], args[1:])
+
+    if len(args) >= 2 and args[0] == "git" and args[1] in RAW_GIT_COMMANDS:
+        return exec_raw("git", args[1:])
 
     real = os.path.join(os.path.dirname(os.path.realpath(__file__)), {real_name!r})
     if not os.path.exists(real):

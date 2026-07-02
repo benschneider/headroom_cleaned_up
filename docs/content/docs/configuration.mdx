@@ -8,6 +8,10 @@ Headroom can be configured via the SDK constructor, proxy command line, environm
 ## CLI Context Tool
 
 `headroom wrap ...` uses RTK for local shell-output filtering by default.
+Managed RTK installs include a Headroom shim that keeps source inspection exact:
+`rtk read`, `rtk cat`, `rtk sed`, `rtk nl`, `rtk diff`, `rtk git diff`, and
+`rtk git show` bypass compression. Use `rtk --raw <command> ...` for any other
+command where exact output matters.
 Set `HEADROOM_CONTEXT_TOOL=lean-ctx` to have wrap commands install or reuse
 `lean-ctx` and run `lean-ctx init --agent <tool>` instead of RTK setup.
 

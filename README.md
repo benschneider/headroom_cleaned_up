@@ -451,6 +451,8 @@ Headroom runs **locally**, covers **every** content type, works with every major
 
 Headroom wraps managed RTK installs with a small shim so compressed shell-output markers are actionable: run `rtk details <hash>` to print the stored original content for a `Retrieve more: hash=...` marker.
 
+The shim keeps source inspection exact: `rtk read`, `rtk cat`, `rtk sed`, `rtk nl`, `rtk diff`, `rtk git diff`, and `rtk git show` bypass compression. Use `rtk --raw <command> ...` when another command needs exact output.
+
 ## Contributing
 
 ```bash
