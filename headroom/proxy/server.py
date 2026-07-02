@@ -894,17 +894,6 @@ class HeadroomProxy(
                 min_evidence=config.traffic_learning_min_evidence,
             )
 
-        # Code graph file watcher (live reindex on file changes)
-        self.code_graph_watcher: CodeGraphWatcher | None = None  # type: ignore[annotation-unchecked]
-        if config.code_graph_watcher:
-            from headroom.graph.watcher import CodeGraphWatcher
-
-            self.code_graph_watcher = CodeGraphWatcher(project_dir=Path.cwd())
-            if self.code_graph_watcher.start():
-                logger.info("Code graph: file watcher started")
-            else:
-                self.code_graph_watcher = None
-
         self.pipeline_extensions.emit(
             PipelineStage.SETUP,
             operation="proxy.setup",

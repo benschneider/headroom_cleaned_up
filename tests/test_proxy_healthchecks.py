@@ -80,7 +80,6 @@ def test_health_preserves_backwards_compatible_config_payload(client):
     assert config["rate_limit"] is False
     assert config["memory"] is False
     assert config["learn"] is False
-    assert config["code_graph"] is False
     assert config["savings_profile"] is None
     assert config["target_ratio"] is None
     assert config["max_items_after_crush"] == 50

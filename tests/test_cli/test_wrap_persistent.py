@@ -255,7 +255,7 @@ def test_ensure_proxy_restarts_idle_stale_ephemeral_proxy(monkeypatch) -> None:
     health = {
         "version": "0.0.1",
         "runtime": {"websocket_sessions": {"active_sessions": 0, "active_relay_tasks": 0}},
-        "config": {"pid": "12345", "memory": False, "learn": False, "code_graph": False},
+        "config": {"pid": "12345", "memory": False, "learn": False},
     }
 
     monkeypatch.setattr(wrap_cli, "_find_persistent_manifest", lambda port: None)
@@ -325,7 +325,7 @@ def test_ensure_proxy_reuses_agent_proxy_without_savings_profile(monkeypatch) ->
     health = {
         "version": wrap_cli._HEADROOM_VERSION,
         "runtime": {"websocket_sessions": {"active_sessions": 0, "active_relay_tasks": 0}},
-        "config": {"pid": "12345", "memory": False, "learn": False, "code_graph": False},
+        "config": {"pid": "12345", "memory": False, "learn": False},
     }
 
     monkeypatch.delenv("HEADROOM_SAVINGS_PROFILE", raising=False)
@@ -357,7 +357,7 @@ def test_ensure_proxy_restarts_for_explicit_agent_savings_profile(monkeypatch) -
     health = {
         "version": wrap_cli._HEADROOM_VERSION,
         "runtime": {"websocket_sessions": {"active_sessions": 0, "active_relay_tasks": 0}},
-        "config": {"pid": "12345", "memory": False, "learn": False, "code_graph": False},
+        "config": {"pid": "12345", "memory": False, "learn": False},
     }
 
     monkeypatch.setenv("HEADROOM_SAVINGS_PROFILE", "agent-90")
@@ -433,7 +433,7 @@ def test_ensure_proxy_leaves_active_stale_ephemeral_proxy_running(monkeypatch) -
     health = {
         "version": "0.0.1",
         "runtime": {"websocket_sessions": {"active_sessions": 2, "active_relay_tasks": 2}},
-        "config": {"pid": "12345", "memory": False, "learn": False, "code_graph": False},
+        "config": {"pid": "12345", "memory": False, "learn": False},
     }
 
     monkeypatch.setattr(wrap_cli, "_find_persistent_manifest", lambda port: None)
@@ -466,7 +466,7 @@ def test_ensure_proxy_defers_version_restart_when_http_wrapper_attached(monkeypa
         "version": "0.0.1",  # stale → version restart wanted
         # No WebSocket relay sessions — the gap that let the old code kill it.
         "runtime": {"websocket_sessions": {"active_sessions": 0, "active_relay_tasks": 0}},
-        "config": {"pid": "12345", "memory": False, "learn": False, "code_graph": False},
+        "config": {"pid": "12345", "memory": False, "learn": False},
     }
 
     monkeypatch.setattr(wrap_cli, "_find_persistent_manifest", lambda port: None)
@@ -501,7 +501,7 @@ def test_ensure_proxy_defers_flag_restart_when_other_wrapper_attached(monkeypatc
         "version": wrap_cli._HEADROOM_VERSION,  # same version → no version restart
         "runtime": {"websocket_sessions": {"active_sessions": 0, "active_relay_tasks": 0}},
         # Running proxy lacks `memory`; this session asks for it.
-        "config": {"pid": "12345", "memory": False, "learn": False, "code_graph": False},
+        "config": {"pid": "12345", "memory": False, "learn": False},
     }
 
     monkeypatch.setattr(wrap_cli, "_find_persistent_manifest", lambda port: None)
@@ -535,7 +535,7 @@ def test_ensure_proxy_restarts_for_flags_when_no_other_wrapper(monkeypatch) -> N
     health = {
         "version": wrap_cli._HEADROOM_VERSION,
         "runtime": {"websocket_sessions": {"active_sessions": 0, "active_relay_tasks": 0}},
-        "config": {"pid": "12345", "memory": False, "learn": False, "code_graph": False},
+        "config": {"pid": "12345", "memory": False, "learn": False},
     }
 
     monkeypatch.setattr(wrap_cli, "_find_persistent_manifest", lambda port: None)

@@ -2,7 +2,7 @@
 
 tokensave (https://github.com/aovestdipaperino/tokensave) is the primary
 coding-task compressor: a local semantic code-graph MCP server. It is a
-single self-contained Rust binary, so — like ``codebase-memory-mcp`` and
+single self-contained Rust binary, so
 ``rtk`` — Headroom fetches the prebuilt release asset for the current
 platform, caches it under ``~/.local/bin``, and registers it as an MCP
 server.

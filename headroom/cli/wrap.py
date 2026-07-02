@@ -395,9 +395,7 @@ def _start_proxy(
     if memory:
         cmd.append("--memory")
 
-    # Forward --code-graph flag to proxy subprocess (live file watcher)
-    if code_graph:
-        cmd.append("--code-graph")
+    # --code-graph is handled by wrap-time tokensave indexing.
 
     # Forward backend configuration to proxy subprocess
     _backend = backend or os.environ.get("HEADROOM_BACKEND")
@@ -1023,9 +1021,6 @@ def _setup_coding_compressor(
         _setup_tokensave_mcp(registrar, verbose=verbose, force=force)
 
 
-_CBM_MCP_SERVER_NAME = "codebase-memory-mcp"
-
-
 def _setup_code_graph(verbose: bool = False) -> bool:
     """Ensure the tokensave code graph is set up and the project indexed.
 
@@ -1037,9 +1032,6 @@ def _setup_code_graph(verbose: bool = False) -> bool:
     when tokensave registration was otherwise skipped.
 
     Returns True if the graph is ready, False if tokensave is unavailable.
-    Earlier releases backed this flag with ``codebase-memory-mcp``; that
-    server is no longer installed, and ``headroom unwrap`` still cleans up any
-    legacy ``codebase-memory-mcp`` entry a prior wrap left behind.
     """
     from headroom.mcp_registry import ClaudeRegistrar
 
@@ -2529,8 +2521,6 @@ def _ensure_proxy(
                     missing.append("memory")
                 if learn and not running_config.get("learn"):
                     missing.append("learn")
-                if code_graph and not running_config.get("code_graph"):
-                    missing.append("code_graph")
                 expected_savings_profile = helpers._wrap_agent_savings_profile(agent_type)
                 if (
                     expected_savings_profile is not None
@@ -2570,7 +2560,6 @@ def _ensure_proxy(
                         # Merge: keep features the running proxy already has
                         memory = memory or bool(running_config.get("memory"))
                         learn = learn or bool(running_config.get("learn"))
-                        code_graph = code_graph or bool(running_config.get("code_graph"))
 
                         proxy_pid = running_config.get("pid")
                         if proxy_pid is not None:
@@ -3460,14 +3449,11 @@ def unwrap_claude(
         registrar = ClaudeRegistrar()
         if registrar.detect():
             removed_headroom = registrar.unregister_server("headroom")
-            removed_code_graph = registrar.unregister_server(_CBM_MCP_SERVER_NAME)
             tokensave_status = _remove_headroom_installed_tokensave_mcp(registrar)
             if removed_headroom:
                 click.echo("  Removed Headroom MCP retrieve tool from Claude.")
             else:
                 click.echo("  Headroom MCP retrieve tool was not registered in Claude.")
-            if removed_code_graph:
-                click.echo("  Removed legacy codebase-memory-mcp code graph server from Claude.")
             if tokensave_status == "removed":
                 click.echo("  Removed Headroom-installed tokensave MCP server from Claude.")
             elif tokensave_status == "failed":
@@ -4047,7 +4033,7 @@ def codex(
 @click.option(
     "--code-graph",
     is_flag=True,
-    help="Enable code graph indexing via codebase-memory-mcp (optional)",
+    help="Force a tokensave code-graph index now",
 )
 @click.option("--no-proxy", is_flag=True, help="Skip proxy startup (use existing proxy)")
 @click.option("--learn", is_flag=True, help="Enable live traffic learning")
@@ -4151,7 +4137,7 @@ def aider(
 @click.option(
     "--code-graph",
     is_flag=True,
-    help="Enable code graph indexing via codebase-memory-mcp (optional)",
+    help="Force a tokensave code-graph index now",
 )
 @click.option("--no-proxy", is_flag=True, help="Skip proxy startup (use existing proxy)")
 @click.option("--learn", is_flag=True, help="Enable live traffic learning")
@@ -4542,7 +4528,7 @@ def continue_dev(
 @click.option(
     "--code-graph",
     is_flag=True,
-    help="Enable code graph indexing via codebase-memory-mcp (optional)",
+    help="Force a tokensave code-graph index now",
 )
 @click.option("--no-proxy", is_flag=True, help="Skip proxy startup (use existing proxy)")
 @click.option("--learn", is_flag=True, help="Enable live traffic learning")
@@ -4667,7 +4653,7 @@ def goose(
 @click.option(
     "--code-graph",
     is_flag=True,
-    help="Enable code graph indexing via codebase-memory-mcp (optional)",
+    help="Force a tokensave code-graph index now",
 )
 @click.option("--no-proxy", is_flag=True, help="Skip proxy startup (use existing proxy)")
 @click.option("--learn", is_flag=True, help="Enable live traffic learning")
@@ -5049,7 +5035,7 @@ def openclaw(
 @click.option(
     "--code-graph",
     is_flag=True,
-    help="Enable code graph indexing via codebase-memory-mcp (optional)",
+    help="Force a tokensave code-graph index now",
 )
 @click.option("--no-proxy", is_flag=True, help="Skip proxy startup (use existing proxy)")
 @click.option("--learn", is_flag=True, help="Enable live traffic learning")

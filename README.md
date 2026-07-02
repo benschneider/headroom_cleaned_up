@@ -352,9 +352,6 @@ pipx, uv tool) and runs the matching upgrade across macOS, Linux, and Windows.
 For git checkouts, editable installs, Docker images, and externally-managed
 system Pythons (PEP 668) it prints the correct manual step instead of guessing.
 
-The proxy also shows a one-line "update available" notice on startup. It checks
-PyPI at most once a day, in the background, and never blocks. Opt out with
-`HEADROOM_UPDATE_CHECK=off` (also skipped in `--stateless` mode and CI).
 
 ### Corporate / SSL-inspection environments
 

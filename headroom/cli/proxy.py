@@ -526,18 +526,6 @@ def dashboard(port: int, no_open: bool) -> None:
         "--disable-kompress. Env: HEADROOM_DISABLE_KOMPRESS_OPENAI=1."
     ),
 )
-# Code graph: indexes project + watches files for live reindex via codebase-memory-mcp.
-# Only useful when the proxy is launched from a project root — it indexes the
-# current working directory.
-@click.option(
-    "--code-graph",
-    is_flag=True,
-    help=(
-        "Enable code graph intelligence: indexes the current working directory "
-        "and watches files for live reindex via codebase-memory-mcp. Only useful "
-        "when the proxy is launched from a project root."
-    ),
-)
 # Read lifecycle (ON by default: compresses stale/superseded Read outputs)
 @click.option(
     "--no-read-lifecycle",
@@ -844,7 +832,6 @@ def proxy(
     disable_kompress_fallback: bool,
     disable_kompress_anthropic: bool | None,
     disable_kompress_openai: bool | None,
-    code_graph: bool,
     no_read_lifecycle: bool,
     read_maturation: bool,
     read_maturation_quiesce_turns: int,
@@ -1094,8 +1081,6 @@ def proxy(
         disable_kompress_fallback=disable_kompress_fallback,
         disable_kompress_anthropic=disable_kompress_anthropic,
         disable_kompress_openai=disable_kompress_openai,
-        # Code graph: live file watcher for incremental reindexing
-        code_graph_watcher=code_graph,
         # Read lifecycle: ON by default (use --no-read-lifecycle to disable)
         read_lifecycle=not no_read_lifecycle,
         # Read maturation (Mechanism B): experimental, OFF by default
@@ -1318,16 +1303,6 @@ Endpoints:
 Press Ctrl+C to stop.
 """)
 
-    # Surface an "update available" notice (reads cache only; no network here).
-    # Best-effort: a broken update check must never block proxy startup.
-    try:
-        from headroom.update_check import format_update_notice
-
-        _update_notice = format_update_notice()
-        if _update_notice:
-            click.echo(f"\n{_update_notice}\n")
-    except Exception:  # noqa: BLE001 — banner must never crash startup
-        pass
 
     # -----------------------------------------------------------------------
     # Option E: start embedding server sidecar if requested

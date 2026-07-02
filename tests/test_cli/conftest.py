@@ -7,7 +7,7 @@ instead of reaching out to GitHub releases. Tests that exercise the
 tokensave-present path patch ``_ensure_tokensave_binary`` / ``ensure_tokensave``
 directly and are unaffected by this guard. This env only gates the new
 tokensave installer (``headroom.graph.tokensave_installer``); rtk and
-codebase-memory-mcp installers do not read it.
+legacy binary installers do not read it.
 """
 
 from __future__ import annotations

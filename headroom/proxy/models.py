@@ -171,9 +171,6 @@ class ProxyConfig:
     disable_kompress_anthropic: bool | None = None
     disable_kompress_openai: bool | None = None
 
-    # Code graph live watcher (triggers incremental reindex on file changes)
-    code_graph_watcher: bool = False
-
     # Per-tool compression profiles
     tool_profiles: dict[str, Any] | None = None
 

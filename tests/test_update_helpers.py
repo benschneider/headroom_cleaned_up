@@ -1,4 +1,4 @@
-"""Coverage for update_check / cli.update helper functions and branches."""
+"""Coverage for cli.update helper functions and manual release lookup branches."""
 
 from __future__ import annotations
 
@@ -14,13 +14,6 @@ from headroom.cli.main import main
 
 
 @pytest.fixture(autouse=True)
-def _env(tmp_path, monkeypatch):
-    monkeypatch.setenv("HEADROOM_WORKSPACE_DIR", str(tmp_path))
-    monkeypatch.setenv("HEADROOM_UPDATE_CHECK", "on")
-    monkeypatch.delenv("HEADROOM_STATELESS", raising=False)
-    monkeypatch.delenv("CI", raising=False)
-    monkeypatch.delenv("HEADROOM_IN_DOCKER", raising=False)
-    monkeypatch.delenv("CONDA_PREFIX", raising=False)
 
 
 # --------------------------------------------------------------------------- #
@@ -266,23 +259,10 @@ def test_select_latest_info_fallback_prerelease_filtered():
     assert uc._select_latest(data, allow_pre=True) == "1.0.0rc1"
 
 
-def test_run_check_disabled_returns_none(monkeypatch):
-    monkeypatch.setenv("HEADROOM_UPDATE_CHECK", "off")
-    monkeypatch.setattr(uc, "fetch_latest_version", lambda **k: pytest.fail("no fetch"))
-    assert uc.run_check() is None
 
 
-def test_maybe_check_async_disabled_returns_none(monkeypatch):
-    monkeypatch.setenv("HEADROOM_UPDATE_CHECK", "off")
-    assert uc.maybe_check_async() is None
 
 
-def test_format_update_notice_invalid_versions(monkeypatch):
-    uc.write_cache("not-a-version")
-    monkeypatch.setattr(uc, "_is_source_checkout", lambda: False)
-    monkeypatch.setattr(uc, "_in_docker", lambda: False)
-    monkeypatch.setattr(uc, "installed_version", lambda: "0.26.0")
-    assert uc.format_update_notice() is None
 
 
 def test_fetch_latest_version_info_only(monkeypatch):

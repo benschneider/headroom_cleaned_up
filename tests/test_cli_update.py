@@ -105,7 +105,7 @@ def test_update_already_current(monkeypatch):
     assert "up to date" in res.output
 
 
-def test_update_check_reports_command_without_running(monkeypatch):
+def test_update_check_command_reports_without_running(monkeypatch):
     monkeypatch.setattr(up, "installed_version", lambda: "0.26.0")
     monkeypatch.setattr(up, "fetch_latest_version", lambda **k: "0.27.0")
     monkeypatch.setattr(up, "_in_virtualenv", lambda: True)

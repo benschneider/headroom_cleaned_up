@@ -193,33 +193,14 @@ def mcp_uninstall() -> None:
                     err=True,
                 )
 
-    # Also remove codebase-memory-mcp if registered (installed by --code-graph)
-    if claude_cli:
-        cbm_check = subprocess.run(
-            [claude_cli, "mcp", "get", "codebase-memory-mcp"],
-            capture_output=True,
-        )
-        if cbm_check.returncode == 0:
-            cbm_rm = run(
-                [claude_cli, "mcp", "remove", "codebase-memory-mcp", "-s", "user"],
-                capture_output=True,
-                text=True,
-            )
-            if cbm_rm.returncode == 0:
-                click.echo("✓ codebase-memory-mcp MCP server removed")
-                removed = True
 
-    # Also remove from mcp.json fallback config if present
+    # Also remove from mcp.json fallback config if present.
     if MCP_CONFIG_PATH.exists():
         config = load_mcp_config()
-        changed = False
-        for server_name in ("headroom", "codebase-memory-mcp"):
-            if server_name in config.get("mcpServers", {}):
-                del config["mcpServers"][server_name]
-                changed = True
-        if changed:
+        if "headroom" in config.get("mcpServers", {}):
+            del config["mcpServers"]["headroom"]
             save_mcp_config(config)
-            click.echo(f"✓ MCP servers removed from {MCP_CONFIG_PATH}")
+            click.echo(f"✓ MCP server removed from {MCP_CONFIG_PATH}")
             removed = True
 
     if not removed:
