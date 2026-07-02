@@ -11,9 +11,9 @@ from headroom.mcp_registry.ledger import (
 
 def _spec(command: str = "uvx") -> ServerSpec:
     return ServerSpec(
-        name="serena",
+        name="legacy_mcp",
         command=command,
-        args=("--from", "git+https://github.com/oraios/serena", "serena"),
+        args=("--from", "git+https://github.com/oraios/legacy_mcp", "legacy_mcp"),
     )
 
 
@@ -32,7 +32,7 @@ def test_ledger_rejects_changed_spec(tmp_path):
     record_install("claude", _spec(), path=ledger)
 
     assert (
-        headroom_installed_matching("claude", _spec(command="/custom/serena"), path=ledger) is False
+        headroom_installed_matching("claude", _spec(command="/custom/legacy_mcp"), path=ledger) is False
     )
 
 
@@ -41,13 +41,13 @@ def test_clear_install_removes_entry(tmp_path):
     spec = _spec()
     record_install("claude", spec, path=ledger)
 
-    clear_install("claude", "serena", path=ledger)
+    clear_install("claude", "legacy_mcp", path=ledger)
 
     assert headroom_installed_matching("claude", spec, path=ledger) is False
 
 
 def test_spec_fingerprint_stable_for_env_order():
-    a = ServerSpec(name="serena", command="uvx", env={"B": "2", "A": "1"})
-    b = ServerSpec(name="serena", command="uvx", env={"A": "1", "B": "2"})
+    a = ServerSpec(name="legacy_mcp", command="uvx", env={"B": "2", "A": "1"})
+    b = ServerSpec(name="legacy_mcp", command="uvx", env={"A": "1", "B": "2"})
 
     assert spec_fingerprint(a) == spec_fingerprint(b)

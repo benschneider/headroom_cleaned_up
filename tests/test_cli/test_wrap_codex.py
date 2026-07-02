@@ -97,10 +97,7 @@ class TestStripCodexHeadroomBlocks:
             "[mcp_servers.headroom]\n"
             'command = "headroom"\n'
             f"{wrap_mod._CODEX_MCP_END}\n\n"
-            "# --- Headroom MCP server: serena ---\n"
-            "[mcp_servers.serena]\n"
             'command = "uvx"\n'
-            "# --- end Headroom MCP server: serena ---\n\n"
             f"{wrap_mod._MEMORY_MCP_MARKER}\n"
             "[mcp_servers.headroom_memory]\n"
             'command = "python"\n'
@@ -110,16 +107,12 @@ class TestStripCodexHeadroomBlocks:
         cleaned = wrap_mod._strip_codex_headroom_blocks(content, remove_mcp=True)
 
         assert "[mcp_servers.headroom]" not in cleaned
-        assert "[mcp_servers.serena]" not in cleaned
         assert "[mcp_servers.headroom_memory]" not in cleaned
         assert 'model = "gpt-4o"' in cleaned
 
     def test_preserves_named_mcp_blocks_when_remove_named_mcp_false(self) -> None:
         content = (
-            "# --- Headroom MCP server: serena ---\n"
-            "[mcp_servers.serena]\n"
             'command = "uvx"\n'
-            "# --- end Headroom MCP server: serena ---\n\n"
             f"{wrap_mod._MEMORY_MCP_MARKER}\n"
             "[mcp_servers.headroom_memory]\n"
             'command = "python"\n'
@@ -130,7 +123,6 @@ class TestStripCodexHeadroomBlocks:
             content, remove_mcp=True, remove_named_mcp=False
         )
 
-        assert "[mcp_servers.serena]" in cleaned
         assert "[mcp_servers.headroom_memory]" not in cleaned
 
 
@@ -788,7 +780,7 @@ def test_wrap_codex_prepare_only_respects_codex_home(
     with patch("headroom.cli.wrap._ensure_rtk_binary", return_value=None):
         result = runner.invoke(
             main,
-            ["wrap", "codex", "--prepare-only", "--no-serena", "--port", "8787"],
+            ["wrap", "codex", "--prepare-only", "--port", "8787"],
         )
 
     assert result.exit_code == 0, result.output
@@ -823,7 +815,7 @@ def test_wrap_codex_injects_rtk_globally_without_changing_project_agents(
                 "codex",
                 "--prepare-only",
                 "--no-mcp",
-                "--no-serena",
+
             ],
         )
 
@@ -849,7 +841,7 @@ def test_unwrap_codex_without_codex_home_warns_on_ambiguous_noop(
                 "codex",
                 "--prepare-only",
                 "--no-mcp",
-                "--no-serena",
+
                 "--port",
                 "8787",
             ],
@@ -1073,7 +1065,7 @@ def test_wrap_codex_memory_prepare_only_uses_local_db_without_persisting_it(
                                 "--memory",
                                 "--prepare-only",
                                 "--no-mcp",
-                                "--no-serena",
+
                             ],
                         )
 
@@ -1087,41 +1079,8 @@ def test_wrap_codex_memory_prepare_only_uses_local_db_without_persisting_it(
     assert "--db" not in content
 
 
-def test_wrap_codex_prepare_only_registers_serena_when_uvx_exists(
-    runner: CliRunner, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    _set_test_home(monkeypatch, tmp_path)
-    config_file = tmp_path / ".codex" / "config.toml"
-    config_file.parent.mkdir(parents=True)
-
-    def fake_which(cmd: str) -> str | None:
-        if cmd == "uvx":
-            return "/usr/local/bin/uvx"
-        return None
-
-    with patch("headroom.cli.wrap._ensure_rtk_binary", return_value=None):
-        with patch("headroom.cli.wrap.shutil.which", side_effect=fake_which):
-            result = runner.invoke(main, ["wrap", "codex", "--prepare-only"])
-
-    assert result.exit_code == 0, result.output
-    content = config_file.read_text(encoding="utf-8")
-    assert "[mcp_servers.serena]" in content
-    assert 'command = "uvx"' in content
-    assert '"--context", "codex"' in content
 
 
-def test_wrap_codex_prepare_only_no_serena_skips_serena(
-    runner: CliRunner, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    _set_test_home(monkeypatch, tmp_path)
-    config_file = tmp_path / ".codex" / "config.toml"
-    config_file.parent.mkdir(parents=True)
-
-    with patch("headroom.cli.wrap._ensure_rtk_binary", return_value=None):
-        result = runner.invoke(main, ["wrap", "codex", "--prepare-only", "--no-serena"])
-
-    assert result.exit_code == 0, result.output
-    assert "[mcp_servers.serena]" not in config_file.read_text(encoding="utf-8")
 
 
 def test_unwrap_codex_restores_prior_config_end_to_end(
@@ -1215,7 +1174,7 @@ def test_wrap_codex_memory_prepare_only_unwrap_removes_memory_mcp_without_prior_
                                 "--memory",
                                 "--prepare-only",
                                 "--no-mcp",
-                                "--no-serena",
+
                             ],
                         )
 
@@ -1270,7 +1229,7 @@ def test_wrap_codex_memory_launch_failure_unwrap_cleans_memory_only_config(
                         ):
                             wrap_result = runner.invoke(
                                 main,
-                                ["wrap", "codex", "--memory", "--no-mcp", "--no-serena"],
+                                ["wrap", "codex", "--memory", "--no-mcp"],
                             )
 
     assert wrap_result.exit_code == 1

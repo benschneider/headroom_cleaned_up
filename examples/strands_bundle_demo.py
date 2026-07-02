@@ -170,7 +170,6 @@ def run_agent_demo() -> None:
     # === The only Headroom-specific code in your app ===
     bundle = HeadroomBundle(
         proxy_url=PROXY_URL,
-        enable_serena_mcp=False,  # disabled here so the demo runs fast
     )
 
     # === Normal Strands agent setup ===

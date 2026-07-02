@@ -165,7 +165,7 @@ def test_openai_tool_schema_compaction_is_deterministic() -> None:
         "tools": [
             {
                 "type": "function",
-                "name": "mcp__serena__",
+                "name": "mcp__legacy_mcp__",
                 "description": "  Semantic code tools.\n\nUse for symbol-aware edits.  ",
                 "parameters": {
                     "$schema": "https://json-schema.org/draft/2020-12/schema",

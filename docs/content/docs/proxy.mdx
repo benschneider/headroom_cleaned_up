@@ -60,11 +60,11 @@ headroom proxy \
 
 #### tokensave binary trust model
 
-`headroom wrap` registers **tokensave** (a local code-graph MCP server) as the default coding-task compressor. tokensave ships as a single prebuilt Rust binary, so `wrap` downloads the release asset for your platform from GitHub and runs it locally. Because the binary is executed, every supported asset is **pinned to a SHA-256 digest in Headroom** (`headroom/graph/tokensave_installer.py`); the downloaded bytes are verified against that digest before extraction, and a mismatch aborts the install (Headroom falls back to the Serena backup) rather than running unverified code.
+`headroom wrap` registers **tokensave** (a local code-graph MCP server) as the default coding-task compressor. tokensave ships as a single prebuilt Rust binary, so `wrap` downloads the release asset for your platform from GitHub and runs it locally. Because the binary is executed, every supported asset is **pinned to a SHA-256 digest in Headroom** (`headroom/graph/tokensave_installer.py`); the downloaded bytes are verified against that digest before extraction, and a mismatch aborts the install rather than running unverified code.
 
-- Set `HEADROOM_BINARIES_OFFLINE=1` to never reach the network — `wrap` then uses an already-installed tokensave or falls back to Serena.
+- Set `HEADROOM_BINARIES_OFFLINE=1` to never reach the network — `wrap` then uses an already-installed tokensave or skips code-graph registration.
 - `HEADROOM_TOKENSAVE_VERSION` overrides the pinned release tag. Since an overridden version has no pinned digest, the download is **refused** unless you also set `HEADROOM_TOKENSAVE_ALLOW_UNVERIFIED=1`.
-- Pass `--no-tokensave` to skip the primary compressor entirely, or `--serena` to force the Serena backup on.
+- Pass `--no-tokensave` to skip the tokensave code-graph MCP server entirely.
 
 By default, the proxy uses the shared **ContentRouter** pipeline. It routes text, logs, JSON, code, images, and tool outputs through the currently enabled compressors and preserves reversible CCR markers where applicable.
 

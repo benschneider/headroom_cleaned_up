@@ -12,14 +12,14 @@ Release-binary only. tokensave is also published to crates.io
 multi-minute compile is the wrong thing to trigger from ``headroom wrap``.
 When no prebuilt asset exists for the platform (e.g. x86_64 macOS, which
 tokensave does not currently publish) or the download fails, this module
-returns ``None`` and the caller falls back to Serena, the backup compressor.
+returns ``None`` and the caller skips code-graph registration.
 
 Supply-chain integrity:
     Because ``headroom wrap`` downloads and then *executes* this binary by
     default, every release asset is pinned to a SHA-256 digest in
     ``TOKENSAVE_ASSET_DIGESTS`` below. The downloaded bytes are verified
     against the pinned digest before the archive is unpacked; a mismatch
-    aborts the install (→ Serena fallback) rather than running unverified
+    aborts the install rather than running unverified
     code. When ``HEADROOM_TOKENSAVE_VERSION`` overrides the pinned tag there
     is no pinned digest, so the download is refused unless the operator
     explicitly opts out of verification via
@@ -89,7 +89,7 @@ def _detect_asset(version: str) -> tuple[str, str] | None:
 
     ``archive_kind`` is ``"tar.gz"`` or ``"zip"``. Returns ``None`` when
     tokensave publishes no prebuilt asset for the current platform (the
-    caller then falls back to Serena). Release assets are named
+    caller then skips code-graph registration). Release assets are named
     ``tokensave-<version>-<arch>-<os>.<ext>``.
     """
     system = platform.system().lower()
@@ -98,7 +98,7 @@ def _detect_asset(version: str) -> tuple[str, str] | None:
     if system == "darwin":
         if machine == "arm64":
             return f"tokensave-{version}-aarch64-macos.tar.gz", "tar.gz"
-        # No x86_64-macos release asset is published — fall back to Serena.
+        # No x86_64-macos release asset is published; skip code-graph registration.
         return None
     if system == "linux":
         arch = "aarch64" if machine in ("aarch64", "arm64") else "x86_64"
@@ -239,7 +239,7 @@ def ensure_tokensave(version: str | None = None) -> Path | None:
 
     Returns the binary path, or ``None`` when the binary is absent and cannot
     be fetched (offline, unsupported platform, or download failure). Callers
-    treat ``None`` as "tokensave unavailable → fall back to Serena".
+    treat ``None`` as "tokensave unavailable; skip code-graph registration".
     """
     existing = get_tokensave_path()
     if existing:

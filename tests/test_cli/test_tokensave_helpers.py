@@ -43,7 +43,7 @@ def test_ensure_binary_none_prints_fallback(
     monkeypatch.setattr(ts, "get_tokensave_path", lambda: None)
     monkeypatch.setattr(ts, "ensure_tokensave", lambda: None)
     assert wrap_cli._ensure_tokensave_binary() is None
-    assert "falling back to Serena" in capsys.readouterr().out
+    assert "skipping code-graph registration" in capsys.readouterr().out
 
 
 # ---------------------------------------------------------------------------

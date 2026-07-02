@@ -107,7 +107,7 @@ def test_wrap_codex_prepare_only_uses_lean_ctx_when_configured(monkeypatch, tmp_
             ) as setup:
                 result = runner.invoke(
                     main,
-                    ["wrap", "codex", "--prepare-only", "--no-mcp", "--no-serena"],
+                    ["wrap", "codex", "--prepare-only", "--no-mcp"],
                 )
 
         assert result.exit_code == 0, result.output
@@ -132,7 +132,7 @@ def test_wrap_codex_prepare_only_accepts_no_context_tool_alias(monkeypatch, tmp_
                         "--prepare-only",
                         "--no-context-tool",
                         "--no-mcp",
-                        "--no-serena",
+
                     ],
                 )
 

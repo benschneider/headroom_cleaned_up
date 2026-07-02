@@ -407,7 +407,7 @@ def test_openai_responses_adapter_preserves_excluded_tool_outputs():
     adapter must correlate them and skip compression for excluded tools.
     """
     router = ContentRouter()
-    router.config.exclude_tools = {"serena.find_symbol", "find_symbol"}
+    router.config.exclude_tools = {"legacy_mcp.find_symbol", "find_symbol"}
 
     def compress(self, content: str, **_kwargs):
         return RouterCompressionResult(
@@ -425,7 +425,7 @@ def test_openai_responses_adapter_preserves_excluded_tool_outputs():
             {
                 "type": "function_call",
                 "call_id": "call_1",
-                "name": "serena.find_symbol",
+                "name": "legacy_mcp.find_symbol",
                 "arguments": "{}",
             },
             {
@@ -461,7 +461,7 @@ def test_openai_responses_adapter_excludes_tool_case_insensitively_with_debug(mo
     """
     monkeypatch.setattr(openai_handler, "_log_codex_compression_debug", lambda *_a, **_k: None)
     router = ContentRouter()
-    router.config.exclude_tools = {"serena.find_symbol"}
+    router.config.exclude_tools = {"legacy_mcp.find_symbol"}
 
     def compress(self, content: str, **_kwargs):
         return RouterCompressionResult(
@@ -479,7 +479,7 @@ def test_openai_responses_adapter_excludes_tool_case_insensitively_with_debug(mo
             {
                 "type": "function_call",
                 "call_id": "call_1",
-                "name": "Serena.Find_Symbol",
+                "name": "LegacyMcp.Find_Symbol",
                 "arguments": "{}",
             },
             {
@@ -506,7 +506,7 @@ def test_openai_responses_adapter_excludes_tool_case_insensitively_with_debug(mo
 def test_openai_responses_adapter_compresses_non_excluded_tool_outputs():
     """Only excluded tools are protected; other tool outputs still compress."""
     router = ContentRouter()
-    router.config.exclude_tools = {"serena.find_symbol"}
+    router.config.exclude_tools = {"legacy_mcp.find_symbol"}
 
     def compress(self, content: str, **_kwargs):
         return RouterCompressionResult(

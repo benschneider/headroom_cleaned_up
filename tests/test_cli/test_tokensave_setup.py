@@ -1,8 +1,4 @@
-"""tokensave is the primary coding-task compressor; Serena is the backup.
-
-These tests pin the wrap-time policy in :func:`_setup_coding_compressor` and
-the tokensave register/disable/migrate helpers, mirroring the Serena tests.
-"""
+"""Tests for tokensave coding-task compressor setup."""
 
 from __future__ import annotations
 
@@ -161,67 +157,3 @@ def test_disable_noop_when_absent(capsys: pytest.CaptureFixture[str]) -> None:
 # ---------------------------------------------------------------------------
 # _setup_coding_compressor — primary/backup policy
 # ---------------------------------------------------------------------------
-
-
-def _spy_compressor(monkeypatch: pytest.MonkeyPatch, *, tokensave_ok: bool) -> dict:
-    calls: dict[str, object] = {"serena_setup": False, "serena_disabled": None, "tokensave": None}
-
-    def fake_setup_tokensave(reg, *, verbose=False, force=False):
-        calls["tokensave"] = "setup"
-        return tokensave_ok
-
-    def fake_disable_tokensave(reg, *, verbose=False):
-        calls["tokensave"] = "disabled"
-
-    def fake_setup_serena(reg, *, context, verbose=False, force=False):
-        calls["serena_setup"] = True
-
-    def fake_disable_serena(reg, *, verbose=False, reason="--no-serena"):
-        calls["serena_disabled"] = reason
-
-    monkeypatch.setattr(wrap_cli, "_setup_tokensave_mcp", fake_setup_tokensave)
-    monkeypatch.setattr(wrap_cli, "_disable_tokensave_mcp", fake_disable_tokensave)
-    monkeypatch.setattr(wrap_cli, "_setup_serena_mcp", fake_setup_serena)
-    monkeypatch.setattr(wrap_cli, "_disable_serena_mcp", fake_disable_serena)
-    return calls
-
-
-def test_policy_tokensave_primary_disables_serena(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls = _spy_compressor(monkeypatch, tokensave_ok=True)
-    wrap_cli._setup_coding_compressor(_FakeRegistrar(), serena_context="claude-code")
-    assert calls["tokensave"] == "setup"
-    assert calls["serena_setup"] is False
-    assert calls["serena_disabled"] == "tokensave is now the primary code-graph compressor"
-
-
-def test_policy_serena_fallback_when_tokensave_unavailable(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    calls = _spy_compressor(monkeypatch, tokensave_ok=False)
-    wrap_cli._setup_coding_compressor(_FakeRegistrar(), serena_context="claude-code")
-    assert calls["serena_setup"] is True
-
-
-def test_policy_force_serena_even_when_tokensave_ok(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls = _spy_compressor(monkeypatch, tokensave_ok=True)
-    wrap_cli._setup_coding_compressor(_FakeRegistrar(), serena_context="claude-code", serena=True)
-    assert calls["serena_setup"] is True
-
-
-def test_policy_no_serena_suppresses_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls = _spy_compressor(monkeypatch, tokensave_ok=False)
-    wrap_cli._setup_coding_compressor(
-        _FakeRegistrar(), serena_context="claude-code", no_serena=True
-    )
-    assert calls["serena_setup"] is False
-    assert calls["serena_disabled"] == "--no-serena"
-
-
-def test_policy_no_tokensave_disables_and_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls = _spy_compressor(monkeypatch, tokensave_ok=True)
-    wrap_cli._setup_coding_compressor(
-        _FakeRegistrar(), serena_context="claude-code", no_tokensave=True
-    )
-    assert calls["tokensave"] == "disabled"
-    # tokensave disabled → treated as unavailable → Serena fallback registers.
-    assert calls["serena_setup"] is True

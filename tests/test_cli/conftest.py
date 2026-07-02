@@ -2,7 +2,7 @@
 
 tokensave is now the primary coding-task compressor, so a default
 ``headroom wrap`` tries to fetch the tokensave release binary. Force offline
-across CLI tests so a missing binary resolves to ``None`` (→ Serena fallback)
+across CLI tests so a missing binary resolves to ``None``
 instead of reaching out to GitHub releases. Tests that exercise the
 tokensave-present path patch ``_ensure_tokensave_binary`` / ``ensure_tokensave``
 directly and are unaffected by this guard. This env only gates the new

@@ -11,7 +11,6 @@ from headroom.mcp_registry.base import (
 from headroom.mcp_registry.install import (
     DEFAULT_PROXY_URL,
     build_headroom_spec,
-    build_serena_spec,
     install_everywhere,
 )
 
@@ -82,34 +81,6 @@ def test_build_spec_falls_back_to_python_module_when_no_binary(monkeypatch) -> N
     assert spec.command == "/usr/bin/python"
     assert spec.args == ("-m", "headroom.cli", "mcp", "serve")
     assert spec.env == {}
-
-
-def test_build_serena_spec_uses_agent_context() -> None:
-    spec = build_serena_spec("codex")
-    assert spec.name == "serena"
-    assert spec.command == "uvx"
-    assert spec.args == (
-        "--from",
-        "git+https://github.com/oraios/serena",
-        "serena",
-        "start-mcp-server",
-        "--project-from-cwd",
-        "--context",
-        "codex",
-        "--open-web-dashboard",
-        "False",
-    )
-    assert spec.env == {}
-
-
-def test_build_serena_spec_disables_dashboard_popup_by_default() -> None:
-    # Headroom installs Serena by default; the dashboard browser tab must not
-    # auto-open. The flag overrides the user's serena_config.yml at startup,
-    # so this holds even when the user never created a Serena config.
-    for context in ("codex", "claude-code"):
-        spec = build_serena_spec(context)
-        idx = spec.args.index("--open-web-dashboard")
-        assert spec.args[idx + 1] == "False"
 
 
 # ----------------------------------------------------------------------
