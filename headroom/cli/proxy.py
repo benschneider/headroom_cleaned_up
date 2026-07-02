@@ -114,6 +114,59 @@ def _selected_context_tool() -> str:
     return raw
 
 
+def _parse_exclude_tools(cli_excludes: str | None) -> set[str]:
+    raw = ",".join(s for s in (cli_excludes, os.environ.get("HEADROOM_EXCLUDE_TOOLS")) if s)
+    names: set[str] = set()
+    for entry in raw.split(","):
+        name = entry.strip()
+        if name:
+            names.add(name)
+            names.add(name.lower())
+    return names
+
+
+def _parse_csv_tools(raw: str | None) -> set[str]:
+    names: set[str] = set()
+    if not raw:
+        return names
+    for entry in raw.split(","):
+        name = entry.strip()
+        if name:
+            names.add(name)
+            names.add(name.lower())
+    return names
+
+
+def _parse_tool_profiles(cli_profiles: list[str]) -> dict[str, Any]:
+    from headroom.config import PROFILE_PRESETS, CompressionProfile
+
+    profiles: dict[str, CompressionProfile] = {}
+    raw_entries: list[str] = list(cli_profiles)
+    env_val = os.environ.get("HEADROOM_TOOL_PROFILES", "")
+    if env_val:
+        raw_entries.extend(e.strip() for e in env_val.split(",") if e.strip())
+
+    for entry in raw_entries:
+        if ":" not in entry:
+            logging.getLogger("headroom.proxy").warning(
+                "Invalid tool profile format (expected ToolName:level): %s", entry
+            )
+            continue
+        tool_name, level = entry.split(":", 1)
+        tool_name = tool_name.strip()
+        level = level.strip().lower()
+        if level in PROFILE_PRESETS:
+            profiles[tool_name] = PROFILE_PRESETS[level]
+        else:
+            logging.getLogger("headroom.proxy").warning(
+                "Unknown profile level '%s' for tool '%s'. Use: conservative, moderate, aggressive",
+                level,
+                tool_name,
+            )
+
+    return profiles
+
+
 @main.command()
 @click.option(
     "--port",
@@ -886,9 +939,6 @@ def proxy(
     try:
         from headroom.proxy.server import (
             ProxyConfig,
-            _parse_csv_tools,
-            _parse_exclude_tools,
-            _parse_tool_profiles,
             run_server,
         )
     except ImportError as e:
